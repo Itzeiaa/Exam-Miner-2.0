@@ -1,0 +1,780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Google Form-like Exam (Advanced)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<style>
+  :root{
+    --bg1:#1e3a8a; --bg2:#3b82f6; --bg3:#60a5fa; --bg4:#93c5fd; --bg5:#1e40af; --bg6:#1d4ed8;
+    --text:#0f172a; --muted:#64748b; --border:#e5e7eb; --card:#ffffff;
+    --accent:#3b82f6; --accent2:#2563eb; --ok:#16a34a; --err:#dc2626;
+    --radius:14px;
+  }
+  @keyframes gradientShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%}
+  body{
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    color:var(--text);
+    background:linear-gradient(-45deg,var(--bg1),var(--bg2),var(--bg3),var(--bg4),var(--bg5),var(--bg6));
+    background-size:400% 400%; animation:gradientShift 15s ease infinite;
+    display:flex; align-items:flex-start; justify-content:center; padding:28px;
+  }
+  .wrap{width:100%;max-width:980px}
+  .card{
+    background:var(--card); border-radius:16px; padding:20px; border:1px solid var(--border);
+    box-shadow:0 10px 30px rgba(2,8,23,.08);
+  }
+  .header{display:flex; align-items:center; gap:12px; margin-bottom:12px}
+  .logo{font-weight:800; color:var(--accent2)}
+  .title{font-size:20px; font-weight:700}
+  .subtitle{color:var(--muted); font-size:13px}
+  .controls{display:flex; gap:8px; margin:14px 0; align-items:center; flex-wrap:wrap}
+  textarea#examText{width:100%;min-height:180px;border-radius:10px;padding:12px;border:1px solid var(--border);font-family:monospace}
+  input[type=text], input[type=email]{padding:10px;border-radius:10px;border:1px solid var(--border);width:100%}
+  .btn{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;cursor:pointer;
+       background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; box-shadow:0 8px 20px rgba(59,130,246,.18)}
+  .btn.secondary{background:#f8fafc;color:var(--text);border:1px solid var(--border);box-shadow:none}
+  .exam-body{margin-top:12px}
+  .section{margin-bottom:18px}
+  .q{padding:16px;border-radius:10px;border:1px solid var(--border);background:#fbfdff;margin-bottom:12px}
+  .q-title{font-weight:700;margin-bottom:8px}
+  .q-meta{font-size:12px;color:var(--muted);margin-bottom:8px}
+  .option{display:flex; gap:10px; align-items:flex-start; margin:6px 0}
+  .option input{margin-top:4px}
+  .match-row{display:flex; gap:12px; align-items:center; margin:8px 0}
+  .match-left{flex:1}
+  .match-right{width:220px}
+  .essay-area{width:100%;min-height:120px;padding:10px;border-radius:8px;border:1px solid var(--border);resize:vertical}
+  .result{padding:12px;border-radius:10px;margin-top:12px}
+  .result.good{background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.12); color:var(--ok)}
+  .result.bad{background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.06); color:var(--err)}
+  .small{font-size:12px;color:var(--muted)}
+  .grid{display:grid;grid-template-columns:1fr 280px; gap:16px; align-items:start}
+  .sidebar{border-left:1px dashed var(--border); padding-left:12px}
+  pre{white-space:pre-wrap;background:#f8fafc;padding:8px;border-radius:8px;border:1px solid var(--border);font-family:monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="header">
+      <div class="logo">Exam UI</div>
+      <div>
+        <div class="title" id="examTitle">Google Form-like Exam</div>
+        <div class="subtitle" id="examSubtitle">Paste the raw exam HTML (database export) below, then Render.</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <textarea id="examText" placeholder="Paste raw HTML from DB (exam33/exam39 style)..."></textarea>
+    </div>
+
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="btn" id="renderBtn">Render Exam</button>
+      <button class="btn secondary" id="fetchBtn">Fetch Exam (template)</button>
+      <input id="studentName" type="text" placeholder="Student full name" style="width:260px" />
+      <input id="studentEmail" type="email" placeholder="Student email (optional)" style="width:260px" />
+    </div>
+
+    <div class="grid">
+      <div>
+        <div id="examArea" class="exam-body"></div>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          <button class="btn" id="submitBtn">Submit Answers</button>
+          <button class="btn secondary" id="previewPayloadBtn">Preview Payload</button>
+        </div>
+
+        <div id="feedback" style="margin-top:12px"></div>
+      </div>
+
+      <div class="sidebar">
+        <div class="small">Instructions</div>
+        <p class="small">- Paste the exact exam HTML export into the textarea and click Render. <br>- The UI supports Multiple Choice, True/False, Identification, Matching, Essay. <br>- Answer Key is detected and stored obfuscated in memory (client-side).<br>- When submitting the exam, auto-graded sections (MC, TF, ID, Matching) will be scored immediately. Essay answers are included for manual grading later.</p>
+
+        <div style="margin-top:14px">
+          <div class="small">Developer templates</div>
+          <pre id="fetchTemplate">async function fetchExamFromServer(){
+  const res = await fetch('/fetch_exam.php'); // GET, returns plain exam HTML
+  return await res.text();
+}</pre>
+          <pre id="submitTemplate">async function submitToServer(payload){
+  await fetch('/submit_exam.php', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+}</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* -------------------------
+   Parser & Renderer
+   Supports sections:
+   - Multiple Choice (divs start with <b>n.</b> and choices margin-left 22px "A. ...")
+   - True or False (lines starting with "_ n. ...")
+   - Identification (numbered lines without A/B choices)
+   - Matching Type (pre blocks with Column A / Column B)
+   - Essay (plain numbered lines under Essay header)
+   - Answer Key (found in "Answer Key" block; parsed and obfuscated)
+   ------------------------- */
+
+(function(){
+  // Encapsulate everything to avoid leaking keys/answers to global scope.
+
+  // Simple obfuscation functions (XOR + base64). Not a substitute for server-side protection,
+  // but prevents casual viewing of answer key in DOM or global vars.
+  function xorEncode(str, key){
+    const res = [];
+    for(let i=0;i<str.length;i++){
+      res.push(String.fromCharCode(str.charCodeAt(i) ^ key.charCodeAt(i % key.length)));
+    }
+    return btoa(res.join(''));
+  }
+  function xorDecode(b64, key){
+    const s = atob(b64);
+    let out = '';
+    for(let i=0;i<s.length;i++){
+      out += String.fromCharCode(s.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return out;
+  }
+
+  // store obfuscated key in closure
+  let obfuscatedAnswerKey = null;
+  let obfuscationSalt = null;
+
+  // Data model for exam we render
+  let examModel = {
+    title: 'Untitled Exam',
+    sections: [] // each section {type, title, items: [...]}
+  };
+
+  // Helpers
+  function trimText(s){ return (s||'').replace(/\s+/g,' ').trim(); }
+
+  // Parse the raw HTML (string) into examModel and extract answer key (if present)
+  function parseExamHTML(rawHtml){
+    const doc = new DOMParser().parseFromString(rawHtml, 'text/html');
+
+    // Attempt to extract title (centered bold)
+    const titleDiv = doc.querySelector("div[style*='text-align:center'], div[style*='text-align:center']");
+    examModel.title = titleDiv ? trimText(titleDiv.textContent) : (doc.querySelector('h1')?.textContent || 'Exam');
+
+    // Traverse top-level divs and pre blocks in order
+    const nodes = Array.from(doc.body.children);
+
+    let currentSection = null;
+
+    function pushSectionIfNeeded(title){
+      if(currentSection) examModel.sections.push(currentSection);
+      currentSection = { type: null, title: title||'', items: [] };
+    }
+
+    // We'll look for section header strings like "Multiple Choice", "True or False", "Identification", "Matching Type", "Essay", "Answer Key"
+    for(let n=0;n<nodes.length;n++){
+      const el = nodes[n];
+      const text = trimText(el.textContent || '');
+      // detect section header
+      if(/multiple choice/i.test(text)){
+        pushSectionIfNeeded('Multiple Choice');
+        currentSection.type = 'multiple_choice';
+        continue;
+      }
+      if(/true or false/i.test(text) || /^true\s*or\s*false$/i.test(text)){
+        pushSectionIfNeeded('True or False');
+        currentSection.type = 'true_false';
+        continue;
+      }
+      if(/identification/i.test(text)){
+        pushSectionIfNeeded('Identification');
+        currentSection.type = 'identification';
+        continue;
+      }
+      if(/matching type/i.test(text) || /match the term/i.test(text)){
+        pushSectionIfNeeded('Matching');
+        currentSection.type = 'matching';
+        // the matching content is likely in subsequent <pre> blocks - we'll parse later
+        continue;
+      }
+      if(/essay/i.test(text)){
+        pushSectionIfNeeded('Essay');
+        currentSection.type = 'essay';
+        continue;
+      }
+      if(/answer key/i.test(text) || /answer key/i.test(text)){
+        // Everything until end (or next page-break) may be answer key
+        // Grab the innerHTML of this and next siblings as keyBlock
+        let keyHtml = el.innerHTML || el.textContent || '';
+        let k = n+1;
+        while(k < nodes.length){
+          const nx = nodes[k];
+          // stop if next is a page-break? but often answer key continues
+          keyHtml += '\n' + (nx.innerHTML || nx.textContent || '');
+          k++;
+        }
+        // Parse the answer key text and store obfuscated
+        const keyMap = parseAnswerKeyFromHtml(keyHtml);
+        storeObfuscatedKey(keyMap);
+        break; // answer key typically at end
+      }
+
+      // If currentSection is set, try to interpret this node as question or block for that section
+      if(currentSection && currentSection.type){
+        if(currentSection.type === 'multiple_choice'){
+          // questions are divs with <b>n.</b> inside or text starting with "1." etc
+          if(el.tagName.toLowerCase() === 'div' && /^\s*(?:<b>)?\d+\./i.test((el.innerHTML||'').trim())){
+            // Gather question text and choices following (choices might be separate sibling divs with margin-left)
+            const qTextRaw = el.innerHTML;
+            // question text (strip <b>n.</b>)
+            const qNumMatch = el.innerText.match(/^\s*(\d+)\.\s*(.*)$/s);
+            const qText = qNumMatch ? qNumMatch[2] : trimText(el.textContent);
+            const qItem = { type:'mcq', question: trimText(qText), image: null, choices: [] };
+            // find inline image
+            const img = el.querySelector('img');
+            if(img) qItem.image = img.getAttribute('src');
+
+            // collect subsequent sibling divs with margin-left (choices)
+            let j = n+1;
+            while(j < nodes.length){
+              const s = nodes[j];
+              if(!s) break;
+              const sText = trimText(s.textContent||'');
+              // choice line typically starts with A. B. etc OR has margin-left:22px style
+              const isChoice = (/^[A-D]\./i.test(sText) || (s.getAttribute('style')||'').includes('margin-left'));
+              // stop when new question starts or a section header
+              if(/^\s*(?:<b>)?\d+\./i.test((s.innerHTML||'').trim()) || /multiple choice|true or false|identification|matching|essay|answer key/i.test(sText)) break;
+              if(isChoice){
+                // parse label and text
+                const m = sText.match(/^[A-Z]\.\s*(.*)$/i);
+                const txt = m ? m[1].trim() : sText;
+                qItem.choices.push(trimText(txt));
+                j++;
+              } else break;
+            }
+            currentSection.items.push(qItem);
+          } else {
+            // maybe question lines are inline (rare), try to find inner bold number
+            if(el.innerHTML && /<b>\d+\.<\/b>/.test(el.innerHTML)){
+              const tmp = document.createElement('div');
+              tmp.innerHTML = el.innerHTML;
+              const bold = tmp.querySelector('b');
+              const qText = tmp.textContent.replace(bold.textContent,'').trim();
+              const qItem = { type:'mcq', question: qText, choices: [] };
+              const img = tmp.querySelector('img');
+              if(img) qItem.image = img.getAttribute('src');
+              // collect following choices nodes
+              let j = n+1;
+              while(j < nodes.length){
+                const s = nodes[j];
+                const sText = trimText(s.textContent||'');
+                if(/^[A-D]\./i.test(sText) || (s.getAttribute('style')||'').includes('margin-left')) {
+                  const m = sText.match(/^[A-Z]\.\s*(.*)$/i);
+                  qItem.choices.push(m?m[1].trim():sText);
+                  j++;
+                } else break;
+              }
+              currentSection.items.push(qItem);
+            }
+          }
+        } else if(currentSection.type === 'true_false'){
+          // TF lines start with "_ n. Statement..."
+          if(el.tagName.toLowerCase()==='div' && /^_/.test(trimText(el.textContent||''))){
+            const raw = trimText(el.textContent);
+            const m = raw.match(/^_\s*\d+\.\s*(.*)$/);
+            const qText = m ? m[1] : raw;
+            currentSection.items.push({type:'tf', question:trimText(qText)});
+          }
+        } else if(currentSection.type === 'identification'){
+          // numbered lines without choices
+          if(el.tagName.toLowerCase()==='div' && /^\d+\./.test(trimText(el.textContent||''))){
+            const raw = trimText(el.textContent);
+            const m = raw.match(/^\d+\.\s*(.*)$/);
+            const qText = m ? m[1] : raw;
+            currentSection.items.push({type:'id', question:trimText(qText)});
+          }
+        } else if(currentSection.type === 'matching'){
+          if(el.tagName.toLowerCase() === 'pre'){
+            // parse pre content
+            const preText = el.textContent || '';
+            const parsed = parseMatchingPre(preText);
+            if(parsed) currentSection.items.push(parsed); // parsed: {type:'matching', left:[], right:[], instruction}
+          }
+        } else if(currentSection.type === 'essay'){
+          if(el.tagName.toLowerCase()==='div' && /^\d+\./.test(trimText(el.textContent||''))){
+            const raw = trimText(el.textContent);
+            const m = raw.match(/^\d+\.\s*(.*)$/);
+            const qText = m ? m[1] : raw;
+            currentSection.items.push({type:'essay', question:trimText(qText)});
+          }
+        }
+      } // end if currentSection
+    } // end nodes loop
+
+    // flush last section
+    if(currentSection) examModel.sections.push(currentSection);
+
+    return examModel;
+  }
+
+  // parse matching pre text into left/right arrays
+  function parseMatchingPre(preText){
+    // Expect "Column A" then numbered lines, then "Column B" then lettered lines
+    const lines = preText.split('\n').map(l=>l.trim()).filter(Boolean);
+    const colA = [], colB = [];
+    let mode = null;
+    for(const l of lines){
+      if(/column\s*a/i.test(l)) { mode='A'; continue; }
+      if(/column\s*b/i.test(l)) { mode='B'; continue; }
+      if(mode==='A'){
+        const m = l.match(/^(\d+)\.\s*(.*)$/);
+        if(m) colA.push({id:m[1], text:m[2]});
+      } else if(mode==='B'){
+        const m = l.match(/^([a-zA-Z])\.\s*(.*)$/);
+        if(m) colB.push({id:m[1].toLowerCase(), text:m[2]});
+      }
+    }
+    if(colA.length && colB.length) return { type:'matching', left:colA, right:colB };
+    return null;
+  }
+
+  // parse answer key from HTML/text
+  function parseAnswerKeyFromHtml(keyHtml){
+    // Simplify: remove HTML tags, keep text, then parse lines with patterns
+    const text = (keyHtml||'').replace(/<[^>]+>/g,'\n').replace(/\r/g,'\n');
+    const lines = text.split('\n').map(l=>l.trim()).filter(Boolean);
+    const keyMap = { mcq:{}, tf:{}, id:{}, matching:[], matchingSets:[], essay:[] };
+
+    // We look for patterns under headings. We'll track currentKeySection.
+    let current = null;
+    for(const ln of lines){
+      if(/\*\*Multiple Choice\*\*/i.test(ln) || /^Multiple Choice$/i.test(ln)) { current='mcq'; continue; }
+      if(/\*\*True or False\*\*/i.test(ln) || /^True or False$/i.test(ln)) { current='tf'; continue; }
+      if(/\*\*Identification\*\*/i.test(ln) || /^Identification$/i.test(ln)) { current='id'; continue; }
+      if(/\*\*Matching Type\*\*/i.test(ln) || /^Matching Type$/i.test(ln)) { current='matching'; continue; }
+      if(/\*\*Essay\*\*/i.test(ln) || /^Essay$/i.test(ln)) { current='essay'; continue; }
+
+      // fallback simple patterns like "1. C" or "1. B"
+      const m = ln.match(/^(\d+)\.\s*([A-Z]|True|False|[a-z]|[0-9a-zA-Z]+)$/i);
+      if(m && current==='mcq'){
+        keyMap.mcq[m[1]] = m[2].toString().trim();
+        continue;
+      }
+      if(m && current==='tf'){
+        // could be "1. True" or "1. False"
+        keyMap.tf[m[1]] = m[2].toString().trim();
+        continue;
+      }
+      if(m && current==='id'){
+        keyMap.id[m[1]] = m[2].toString().trim();
+        continue;
+      }
+
+      // matching lines might be in forms like "1. c" or "1. c" after "Column A" marker
+      const mm = ln.match(/^(\d+)\.\s*([a-zA-Z])$/i);
+      if(mm && current==='matching'){
+        keyMap.matching.push({ left: mm[1], right: mm[2].toLowerCase() });
+        continue;
+      }
+
+      // also handle "1. B" even if not in section markers (common in your files under "Answer Key — SET 1")
+      const mm2 = ln.match(/^(\d+)\.\s*([A-Z])$/i);
+      if(mm2){
+        keyMap.mcq[mm2[1]] = mm2[2];
+        continue;
+      }
+    }
+    return keyMap;
+  }
+
+  function storeObfuscatedKey(keyMap){
+    // create a random salt
+    const salt = Math.random().toString(36).slice(2,12);
+    const json = JSON.stringify(keyMap);
+    obfuscatedAnswerKey = xorEncode(json, salt);
+    obfuscationSalt = salt;
+    // don't keep plaintext anywhere
+  }
+
+  function retrieveAnswerKey(){
+    if(!obfuscatedAnswerKey) return null;
+    try{
+      const dec = xorDecode(obfuscatedAnswerKey, obfuscationSalt);
+      return JSON.parse(dec);
+    }catch(e){ console.error('Answer key decode failed', e); return null; }
+  }
+
+  // Render the examModel into the UI
+  function renderExam(){
+    const area = document.getElementById('examArea');
+    area.innerHTML = '';
+    document.getElementById('examTitle').textContent = examModel.title || 'Exam';
+
+    // create a sequential question id system
+    let globalIndex = 0;
+    // store mapping from globalIndex to item meta for grading later
+    const indexMap = [];
+
+    examModel.sections.forEach(section=>{
+      const secEl = document.createElement('div');
+      secEl.className = 'section';
+      const secTitle = document.createElement('div');
+      secTitle.className = 'small';
+      secTitle.style.fontWeight = '700';
+      secTitle.style.marginBottom = '8px';
+      secTitle.textContent = section.title || (section.type || 'Section');
+      secEl.appendChild(secTitle);
+
+      // for each item in section
+      section.items.forEach(item=>{
+        globalIndex++;
+        const qEl = document.createElement('div');
+        qEl.className = 'q';
+        qEl.dataset.gidx = globalIndex;
+
+        // question title
+        const qTitle = document.createElement('div');
+        qTitle.className = 'q-title';
+        qTitle.innerHTML = `<span style="color:var(--muted);font-weight:600;margin-right:8px">${globalIndex}.</span> ${escapeHtml(item.question || '')}`;
+        qEl.appendChild(qTitle);
+
+        // image
+        if(item.image){
+          const img = document.createElement('img');
+          img.src = item.image;
+          img.alt = '';
+          qEl.appendChild(img);
+        }
+
+        // render by type
+        if(item.type === 'mcq'){
+          const opts = item.choices || [];
+          opts.forEach((opt, idx)=>{
+            const o = document.createElement('label');
+            o.className = 'option';
+            const input = document.createElement('input');
+            input.type = 'radio';
+            input.name = 'q_' + globalIndex;
+            input.value = opt;
+            input.dataset.optIndex = idx;
+            const span = document.createElement('div');
+            span.innerHTML = escapeHtml(opt);
+            o.appendChild(input); o.appendChild(span);
+            qEl.appendChild(o);
+          });
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'mcq', original:item });
+        } else if(item.type === 'tf'){
+          // render True / False radio
+          ['True','False'].forEach(v=>{
+            const o = document.createElement('label');
+            o.className = 'option';
+            const input = document.createElement('input');
+            input.type = 'radio';
+            input.name = 'q_' + globalIndex;
+            input.value = v;
+            const span = document.createElement('div'); span.textContent = v;
+            o.appendChild(input); o.appendChild(span);
+            qEl.appendChild(o);
+          });
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'tf', original:item });
+        } else if(item.type === 'id'){
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.name = 'q_' + globalIndex;
+          input.placeholder = 'Type your answer';
+          qEl.appendChild(input);
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'id', original:item });
+        } else if(item.type === 'matching'){
+          // item is {left:[], right:[]}
+          const instruction = document.createElement('div'); instruction.className='q-meta'; instruction.textContent='Matching: choose the correct match';
+          qEl.appendChild(instruction);
+
+          // right options in a select
+          const rightOptions = item.right.map(r=>({id:r.id, text:r.text}));
+          item.left.forEach((l, idx)=>{
+            const row = document.createElement('div'); row.className='match-row';
+            const left = document.createElement('div'); left.className='match-left'; left.textContent = `${l.id}. ${l.text}`;
+            const right = document.createElement('select'); right.className='match-right'; right.name = 'q_' + globalIndex + '_m_' + idx;
+            const def = document.createElement('option'); def.value=''; def.textContent='Select';
+            right.appendChild(def);
+            rightOptions.forEach(opt=>{
+              const oel = document.createElement('option'); oel.value = opt.id; oel.textContent = `${opt.id.toUpperCase()}. ${opt.text}`;
+              right.appendChild(oel);
+            });
+            row.appendChild(left); row.appendChild(right);
+            qEl.appendChild(row);
+          });
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'matching', original:item });
+        } else if(item.type === 'essay'){
+          const ta = document.createElement('textarea'); ta.className='essay-area'; ta.name = 'q_' + globalIndex;
+          qEl.appendChild(ta);
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'essay', original:item });
+        } else {
+          // fallback short answer
+          const input = document.createElement('input'); input.type='text'; input.name = 'q_' + globalIndex;
+          qEl.appendChild(input);
+          indexMap.push({ gidx:globalIndex, section:section.title, type:'short', original:item });
+        }
+
+        secEl.appendChild(qEl);
+      });
+
+      area.appendChild(secEl);
+    });
+
+    // Save indexMap on element for grading later
+    area.dataset.indexMap = JSON.stringify(indexMap);
+  }
+
+  // Utility: escape HTML for safe insertion
+  function escapeHtml(s){
+    if(!s) return '';
+    return s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
+  }
+
+  // Grading: use retrieveAnswerKey() to compare. Build payload JSON structure including:
+  // { student: {name,email}, results: {totalAutoScore, maxAuto, perQuestion:[{gidx,type,correct,studentAnswer,score}]}, essays: [{gidx,question,answer}] }
+  async function gradeAndPreparePayload(){
+    const area = document.getElementById('examArea');
+    const idxMap = JSON.parse(area.dataset.indexMap || '[]');
+
+    const answers = {};
+    const perQuestion = [];
+    let totalAuto = 0;
+    let maxAuto = 0;
+
+    const answerKey = retrieveAnswerKey(); // may be null if key absent
+    // We'll map MCQ keys by question number in original exam - but questions in file were numbered per section.
+    // To match, we need a heuristic: match sequentially: MCQ items correspond order-wise to keyMap.mcq's numbered entries.
+    // We'll collect keys in arrays for each section type to pop sequentially.
+
+    const keyQueues = { mcq:[], tf:[], id:[], matching: [] };
+    if(answerKey){
+      for(const k in answerKey.mcq) keyQueues.mcq.push({num:k, ans: answerKey.mcq[k]});
+      for(const k in answerKey.tf) keyQueues.tf.push({num:k, ans: answerKey.tf[k]});
+      for(const k in answerKey.id) keyQueues.id.push({num:k, ans: answerKey.id[k]});
+      if(Array.isArray(answerKey.matching)) keyQueues.matching = answerKey.matching.slice();
+    }
+
+    // Counters to progress through keys in order
+    let keyPos = { mcq:0, tf:0, id:0, matching:0 };
+
+    for(const meta of idxMap){
+      const g = meta.gidx;
+      const name = 'q_' + g;
+      let studentAnswer = null;
+      let score = null;
+      let correctAnswer = null;
+
+      if(meta.type === 'mcq'){
+        const sel = document.querySelector(`input[name="${name}"]:checked`);
+        studentAnswer = sel ? sel.value.trim() : '';
+        // grading if key available
+        if(keyQueues.mcq.length > keyPos.mcq){
+          const keyObj = keyQueues.mcq[keyPos.mcq++];
+          correctAnswer = keyObj.ans.toString().trim();
+          // compare: key might be single letter like 'C' meaning option label. But our rendered choices are full text.
+          // Best-effort: if correctAnswer is a single letter, find that choice text from original item
+          const choices = meta.original.choices || [];
+          let correctText = correctAnswer;
+          if(/^[A-Z]$/i.test(correctAnswer) && choices.length){
+            const idxLetter = correctAnswer.toUpperCase().charCodeAt(0) - 65;
+            correctText = choices[idxLetter] || correctAnswer;
+          }
+          const isCorrect = normalizeStr(studentAnswer) === normalizeStr(correctText);
+          score = isCorrect ? 1 : 0;
+          totalAuto += score; maxAuto += 1;
+        }
+      } else if(meta.type === 'tf'){
+        const sel = document.querySelector(`input[name="${name}"]:checked`);
+        studentAnswer = sel ? sel.value.trim() : '';
+        if(keyQueues.tf.length > keyPos.tf){
+          const keyObj = keyQueues.tf[keyPos.tf++];
+          correctAnswer = keyObj.ans.toString().trim();
+          // Some keys are single letters or "True"/"False"
+          const isCorrect = normalizeStr(studentAnswer) === normalizeStr(correctAnswer);
+          score = isCorrect ? 1 : 0;
+          totalAuto += score; maxAuto += 1;
+        }
+      } else if(meta.type === 'id'){
+        const inp = document.querySelector(`input[name="${name}"]`);
+        studentAnswer = inp ? inp.value.trim() : '';
+        if(keyQueues.id.length > keyPos.id){
+          const keyObj = keyQueues.id[keyPos.id++];
+          correctAnswer = keyObj.ans.toString().trim();
+          const isCorrect = normalizeStr(studentAnswer) === normalizeStr(correctAnswer);
+          score = isCorrect ? 1 : 0;
+          totalAuto += score; maxAuto += 1;
+        }
+      } else if(meta.type === 'matching'){
+        // collect each select of this matching (we created selects named q_{g}_m_{idx})
+        studentAnswer = {};
+        const leftList = meta.original.left || [];
+        leftList.forEach((l, idx)=>{
+          const sel = document.querySelector(`select[name="${name}_m_${idx}"]`);
+          studentAnswer[l.id] = sel ? sel.value : '';
+        });
+        // grade using keyQueues.matching sequentially
+        if(keyPos.matching < keyQueues.matching.length){
+          // keyQueues.matching may contain entries like {left:'1', right:'c'}
+          let correctCount = 0, totalCount = (meta.original.left || []).length;
+          for(const kv of keyQueues.matching){
+            // kv.left corresponds to left id; check if it's in this matching set
+            const leftId = kv.left;
+            const rightId = kv.right.toString().toLowerCase();
+            if(studentAnswer[leftId] && studentAnswer[leftId].toLowerCase() === rightId) correctCount++;
+          }
+          // Because keyQueues.matching was aggregated globally, it's tricky to map sets to each matching question.
+          // Simpler heuristic: if number of lefts equals number of keys for this matching, grade proportionally.
+          score = correctCount; maxAuto += totalCount; totalAuto += (score||0);
+          // we won't advance keyPos here because keys are global - but to avoid double-counting, consume keys equal to totalCount
+          keyPos.matching += totalCount;
+          // also set correctAnswer list
+          correctAnswer = keyQueues.matching.slice(0, totalCount);
+        }
+      } else if(meta.type === 'essay'){
+        const ta = document.querySelector(`textarea[name="${name}"]`);
+        studentAnswer = ta ? ta.value.trim() : '';
+        // essay: not auto-graded
+        score = null;
+      } else {
+        // short/unknown
+        const inp = document.querySelector(`input[name="${name}"]`);
+        studentAnswer = inp ? inp.value.trim() : '';
+      }
+
+      perQuestion.push({
+        gidx: g,
+        type: meta.type,
+        question: meta.original.question,
+        studentAnswer,
+        correctAnswer,
+        score
+      });
+    } // end for each meta
+
+    // Build payload
+    const studentName = document.getElementById('studentName').value.trim();
+    const studentEmail = document.getElementById('studentEmail').value.trim();
+
+    const payload = {
+      student: { name: studentName || null, email: studentEmail || null },
+      examTitle: examModel.title,
+      timestamp: new Date().toISOString(),
+      summary: {
+        autoScore: totalAuto,
+        maxAuto: maxAuto
+      },
+      perQuestion,
+      essays: perQuestion.filter(p=>p.type==='essay').map(p=>({ gidx:p.gidx, question:p.question, answer:p.studentAnswer })),
+      rawModel: null // intentionally omitted to keep payload small; can include if needed
+    };
+
+    return payload;
+  }
+
+  // Normalize string for comparison
+  function normalizeStr(s){
+    return (s||'').toString().trim().toLowerCase().replace(/\s+/g,' ');
+  }
+
+  // Public event handlers
+  document.getElementById('renderBtn').addEventListener('click', ()=>{
+    const raw = document.getElementById('examText').value;
+    if(!raw) return alert('Paste the exam HTML into the textarea first.');
+    // parse and render
+    parseExamHTML(raw);
+    renderExam();
+    // Clear feedback
+    document.getElementById('feedback').innerHTML = '';
+  });
+
+  // Fetch template - for now this is a placeholder that demonstrates how to fetch exam HTML
+  document.getElementById('fetchBtn').addEventListener('click', async ()=>{
+    // Developer: replace the URL below with your PHP endpoint that returns exam HTML
+    const url = '/fetch_exam.php';
+    try{
+      const res = await fetch(url);
+      if(!res.ok) throw new Error('Fetch failed: ' + res.status);
+      const text = await res.text();
+      document.getElementById('examText').value = text;
+      alert('Fetched exam HTML into textarea. Click Render Exam.');
+    }catch(err){
+      alert('Fetch placeholder error: ' + err.message + '\n(You can paste the HTML manually for now.)');
+    }
+  });
+
+  // Submit handler: grade, show immediate auto-graded results, prepare JSON payload and POST template
+  document.getElementById('submitBtn').addEventListener('click', async ()=>{
+    const payload = await gradeAndPreparePayload();
+    // Show simple result summary
+    const fb = document.getElementById('feedback');
+    fb.innerHTML = '';
+    const s = document.createElement('div');
+    s.className = 'result good';
+    const pct = payload.summary.maxAuto ? Math.round((payload.summary.autoScore / payload.summary.maxAuto) * 100) : 0;
+    s.innerHTML = `<strong>Auto-graded score:</strong> ${payload.summary.autoScore} / ${payload.summary.maxAuto} (${pct}%)`;
+    fb.appendChild(s);
+
+    // show list of wrong answers and which ones need manual grading
+    const wrong = payload.perQuestion.filter(p => p.score === 0 && (p.type==='mcq' || p.type==='tf' || p.type==='id'));
+    if(wrong.length){
+      const w = document.createElement('div'); w.className='result bad'; w.style.marginTop='10px';
+      w.innerHTML = `<strong>Questions needing review / incorrect:</strong> ${wrong.length}`;
+      const ul = document.createElement('ul');
+      wrong.forEach(r=>{
+        const li = document.createElement('li');
+        li.innerHTML = `#${r.gidx} — <span style="font-weight:700">${escapeHtml(r.question)}</span><br>
+                        your answer: <em>${escapeHtml(r.studentAnswer)}</em> — correct: <em>${escapeHtml(r.correctAnswer)}</em>`;
+        ul.appendChild(li);
+      });
+      w.appendChild(ul);
+      fb.appendChild(w);
+    }
+
+    // show essays for manual grading
+    const essays = payload.essays || [];
+    if(essays.length){
+      const ebox = document.createElement('div'); ebox.className='result'; ebox.style.marginTop='10px';
+      ebox.innerHTML = `<strong>Essay answers (for manual grading):</strong><div class="small">Sent in payload for teacher review</div>`;
+      const pre = document.createElement('pre');
+      pre.textContent = essays.map(el=>`#${el.gidx} - ${el.question}\nAnswer:\n${el.answer}\n\n`).join('\n');
+      ebox.appendChild(pre);
+      fb.appendChild(ebox);
+    }
+
+    // Store payload preview in a safe place for developer
+    window._lastExamPayload = payload; // small convenience; remove if you want zero global leakage
+
+    // Template: send to server (developer replaces URL)
+    try{
+      // Developer may choose to automatically send the payload:
+      // await fetch('/submit_exam.php', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      // For safety in this demo we do not auto-send; instead show preview
+    }catch(err){
+      console.error(err);
+    }
+  });
+
+  // Preview payload button
+  document.getElementById('previewPayloadBtn').addEventListener('click', async ()=>{
+    const payload = window._lastExamPayload || await gradeAndPreparePayload();
+    const w = window.open('', '_blank', 'width=800,height=800,scrollbars=yes');
+    w.document.title = 'Exam Payload Preview';
+    w.document.body.style.fontFamily = 'monospace';
+    w.document.body.innerHTML = `<pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>`;
+  });
+
+  // Expose minimal developer utilities into DOM templates (the actual functions are in sidebar code blocks)
+  // End of closure
+})();
+</script>
+</body>
+</html>

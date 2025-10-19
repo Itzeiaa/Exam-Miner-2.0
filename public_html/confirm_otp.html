@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Confirm OTP • Exam Miner</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
+  <style>
+    :root{
+      --bg1:#1e3a8a; --bg2:#3b82f6; --bg3:#60a5fa; --bg4:#93c5fd; --bg5:#1e40af; --bg6:#1d4ed8;
+      --text:#0f172a; --muted:#64748b; --border:#e5e7eb; --card:#ffffff;
+      --accent:#3b82f6; --accent2:#2563eb; --ok:#16a34a; --err:#dc2626;
+      --radius:14px;
+    }
+    @keyframes gradientShift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+    *{box-sizing:border-box; margin:0}
+    html,body{height:100%}
+    body{
+      font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      color:var(--text);
+      background:linear-gradient(-45deg,var(--bg1),var(--bg2),var(--bg3),var(--bg4),var(--bg5),var(--bg6));
+      background-size:400% 400%; animation:gradientShift 15s ease infinite;
+      display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .card{
+      width:100%; max-width:480px; background:var(--card);
+      border:1px solid var(--border); border-radius:var(--radius);
+      box-shadow:0 10px 30px rgba(2,8,23,.08);
+      padding:28px 28px 24px;
+    }
+    .logo{
+      display:flex; align-items:center; gap:10px; margin-bottom:16px; color:var(--accent2);
+      font-weight:700; letter-spacing:.3px; font-size:18px;
+    }
+    .title{font-size:24px; font-weight:700; margin-bottom:4px}
+    .subtitle{color:var(--muted); font-size:14px; margin-bottom:20px}
+
+    label{display:block; font-size:14px; font-weight:600; margin-bottom:8px}
+    input[type="text"],input[type="email"]{
+      width:100%; border:1px solid var(--border); border-radius:12px; padding:14px 16px;
+      font-size:15px; outline:none; transition:border-color .2s, box-shadow .2s; background:#fff;
+    }
+    input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+    .row{display:flex; gap:12px}
+    .btn{
+      appearance:none; border:0; border-radius:12px; padding:13px 16px; font-weight:700; cursor:pointer;
+      background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; transition:transform .15s,box-shadow .2s;
+      box-shadow:0 8px 20px rgba(59,130,246,.25);
+    }
+    .btn:hover{transform:translateY(-1px)}
+    .btn:disabled{opacity:.55; cursor:not-allowed; box-shadow:none; transform:none}
+    .btn.secondary{
+      background:#f8fafc; color:#0f172a; border:1px solid var(--border); box-shadow:none;
+    }
+    .hint{font-size:12px; color:var(--muted); margin-top:6px}
+    #response{margin-top:12px; font-size:14px}
+    #response.ok{color:var(--ok)}
+    #response.err{color:var(--err)}
+  </style>
+</head>
+<body>
+  <main class="card" role="main" aria-labelledby="title">
+    <div class="logo"><i class="fa-solid fa-graduation-cap"></i> Exam Miner</div>
+    <h1 id="title" class="title">Confirm OTP</h1>
+    <p class="subtitle">We sent a one-time code to your email. Enter it below to continue.</p>
+
+    <form id="otpForm" novalidate>
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" autocomplete="email" required>
+
+      <label for="otp" style="margin-top:14px;">Enter OTP</label>
+      <input type="text" id="otp" name="otp" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code">
+
+      <div class="row" style="margin-top:14px;">
+        <button type="button" id="sendOTPBtn" class="btn secondary" style="flex:1;">
+          <i class="fa-regular fa-paper-plane" style="margin-right:8px;"></i>Send OTP
+        </button>
+        <button type="submit" id="verifyBtn" class="btn" style="flex:1;">
+          <i class="fa-solid fa-shield-halved" style="margin-right:8px;"></i>Verify
+        </button>
+      </div>
+      <div class="hint">Didn’t get it? Check spam or try resending after the cooldown.</div>
+    </form>
+
+    <p id="response" role="alert" aria-live="polite"></p>
+  </main>
+
+  <script>
+    /* Redirect if already logged in */
+    if(localStorage.getItem('jwt_token')) location.href='dashboard';
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const emailParam = urlParams.get("email");
+    const userIDParam = urlParams.get("user_id");
+    const userName = urlParams.get("username");
+
+    const emailInput = document.getElementById("email");
+    const responseBox = document.getElementById("response");
+    const sendOTPBtn = document.getElementById("sendOTPBtn");
+
+    if (emailParam && userIDParam && userName) {
+      emailInput.value = emailParam;
+      emailInput.readOnly = true;
+    }
+
+    function showMsg(text, ok=false){
+      responseBox.className = ok ? 'ok' : 'err';
+      responseBox.textContent = text;
+    }
+
+    let otpCooldown = false;
+    sendOTPBtn.addEventListener("click", () => {
+      responseBox.textContent = "";
+      if (otpCooldown) return;
+
+      const email = emailInput.value.trim();
+      if (!email) return showMsg("Email is required.");
+
+      const formData = new FormData();
+      formData.append("email", email);
+      formData.append("action", "send");
+
+      fetch("https://exam-miner.com/api/mail.php", { method:"POST", body: formData })
+        .then(res => res.json())
+        .then(data => {
+          showMsg(data.message, data.status === "success");
+          if (data.status === "success") {
+            otpCooldown = true;
+            sendOTPBtn.disabled = true;
+            let remaining = 30;
+            sendOTPBtn.textContent = `Resend in ${remaining}s`;
+            const countdown = setInterval(() => {
+              remaining--;
+              sendOTPBtn.textContent = `Resend in ${remaining}s`;
+              if (remaining <= 0) {
+                clearInterval(countdown);
+                otpCooldown = false;
+                sendOTPBtn.disabled = false;
+                sendOTPBtn.textContent = "Send OTP";
+              }
+            }, 1000);
+          }
+        })
+        .catch(() => showMsg("Failed to send OTP."));
+    });
+
+    document.getElementById("otpForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      responseBox.textContent = "";
+
+      const email = emailInput.value.trim();
+      const otp = document.getElementById("otp").value.trim();
+
+      if (!email && !otp) return showMsg("Email and OTP are required.");
+      if (!email) return showMsg("Email is required.");
+      if (!otp) return showMsg("OTP is required.");
+
+      const formData = new FormData();
+      formData.append("action", "verify");
+      formData.append("email", email);
+      formData.append("otp", otp);
+      formData.append("user_id", userIDParam);
+      formData.append("username", userName);
+
+      fetch("https://exam-miner.com/api/mail.php", { method:"POST", body: formData })
+        .then(res => res.json())
+        .then(data => {
+          showMsg(data.message, data.status === "success");
+          if (data.status === "success") {
+            setTimeout(() => {
+              localStorage.setItem('jwt_token', data.token);
+              location.href = "dashboard";
+            }, 900);
+          }
+        })
+        .catch(() => showMsg("Verification failed"));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam Portal</title>
+<style>
+:root{
+  --bg1:#1e3a8a; --bg2:#3b82f6; --bg3:#60a5fa; --bg4:#93c5fd;
+  --card:#fff; --border:#e5e7eb; --text:#0f172a; --muted:#64748b;
+  --accent:#2563eb; --accent2:#1e40af; --ok:#16a34a; --err:#dc2626;
+}
+@keyframes gradientShift{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+body{
+  margin:0; font-family:Inter,system-ui,sans-serif; color:var(--text);
+  background:linear-gradient(135deg,var(--bg1),var(--bg2),var(--bg3),var(--bg4));
+  background-size:400% 400%; animation:gradientShift 20s ease infinite;
+  display:flex; justify-content:center; min-height:100vh; padding:32px;
+}
+main{
+  background:var(--card); width:100%; max-width:900px; border-radius:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.1); padding:28px; border:1px solid var(--border);
+}
+header{text-align:center;margin-bottom:24px}
+h1{margin:0;font-size:1.6rem;color:var(--accent2)}
+p.subtitle{margin:4px 0 0;color:var(--muted);font-size:.9rem}
+textarea,input,select,button{
+  font-family:inherit;font-size:1rem;border-radius:8px;border:1px solid var(--border);
+}
+textarea{width:100%;min-height:160px;padding:10px;margin-bottom:12px}
+input[type=text],input[type=email]{width:100%;padding:10px;margin:6px 0}
+button{
+  background:var(--accent);color:#fff;padding:10px 16px;border:0;cursor:pointer;
+  transition:.2s; font-weight:600;
+}
+button:hover{background:var(--accent2)}
+.btn-secondary{background:#f8fafc;color:var(--text);border:1px solid var(--border)}
+.section{margin:20px 0}
+.q{background:#f9fafb;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
+.q-title{font-weight:600;margin-bottom:8px}
+.option{display:flex;align-items:flex-start;margin:6px 0;gap:8px}
+.option input{margin-top:3px}
+.match-row{display:flex;gap:10px;margin:8px 0}
+.match-right{width:200px}
+textarea.essay-area{width:100%;min-height:100px;resize:vertical;padding:8px}
+.result{border-radius:10px;padding:10px;margin-top:10px}
+.result.good{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2)}
+.result.bad{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2)}
+.small{font-size:.85rem;color:var(--muted)}
+pre{background:#f9fafb;padding:8px;border-radius:6px;overflow:auto}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1 id="examTitle">Exam Portal</h1>
+  <p class="subtitle">Paste the raw HTML exam data, then render.</p>
+</header>
+
+<section>
+  <textarea id="examText" placeholder="Paste raw HTML from DB..."></textarea>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+    <button id="renderBtn">Render Exam</button>
+    <button class="btn-secondary" id="fetchBtn">Fetch Exam (template)</button>
+    <input id="studentName" type="text" placeholder="Your Name" style="max-width:240px">
+    <input id="studentEmail" type="email" placeholder="Your Email (optional)" style="max-width:240px">
+  </div>
+</section>
+
+<section id="examArea"></section>
+
+<div style="margin-top:12px;display:flex;gap:8px">
+  <button id="submitBtn">Submit</button>
+  <button class="btn-secondary" id="previewPayloadBtn">Preview JSON</button>
+</div>
+<div id="feedback"></div>
+
+<script>
+(function(){
+  let examModel={},keyEnc=null,salt=null;
+  function xor(str,k){return btoa([...str].map((c,i)=>String.fromCharCode(c.charCodeAt(0)^k.charCodeAt(i%k.length))).join(''))}
+  function dxor(b,k){let s=atob(b);return [...s].map((c,i)=>String.fromCharCode(c.charCodeAt(0)^k.charCodeAt(i%k.length))).join('')}
+  function hideKey(k){salt=Math.random().toString(36).slice(2,10);keyEnc=xor(JSON.stringify(k),salt)}
+  function getKey(){try{return JSON.parse(dxor(keyEnc,salt))}catch{return null}}
+  const t=x=>x?x.replace(/\s+/g,' ').trim():'';
+  function parseExam(h){
+    const d=new DOMParser().parseFromString(h,'text/html'),nodes=[...d.body.children];
+    examModel={title:(d.querySelector('h1')?.textContent)||'Exam',sections:[]};
+    let cs=null;
+    function newSec(n,t){if(cs)examModel.sections.push(cs);cs={title:n,type:t,items:[]}}
+    for(const n of nodes){
+      const tx=t(n.textContent);
+      if(/multiple choice/i.test(tx)){newSec('Multiple Choice','mcq');continue}
+      if(/true or false/i.test(tx)){newSec('True or False','tf');continue}
+      if(/identification/i.test(tx)){newSec('Identification','id');continue}
+      if(/matching/i.test(tx)){newSec('Matching','match');continue}
+      if(/essay/i.test(tx)){newSec('Essay','essay');continue}
+      if(/answer key/i.test(tx)){hideKey(parseKey(n.innerText));break}
+      if(!cs)continue;
+      if(cs.type==='mcq'&&/^\d+\./.test(tx)){
+        const q={type:'mcq',q:tx.replace(/^\d+\.\s*/,'').trim(),choices:[]};
+        let s=n.nextElementSibling;
+        while(s&&(/^[A-D]\./i.test(t(s.textContent))||(s.getAttribute('style')||'').includes('margin-left'))){
+          q.choices.push(t(s.textContent).replace(/^[A-Z]\.\s*/,''));
+          s=s.nextElementSibling;
+        }cs.items.push(q);
+      }
+      if(cs.type==='tf'&&/^_/.test(tx)){cs.items.push({type:'tf',q:tx.replace(/^_+\s*\d+\.\s*/,'')})}
+      if(cs.type==='id'&&/^\d+\./.test(tx)){cs.items.push({type:'id',q:tx.replace(/^\d+\.\s*/,'')})}
+      if(cs.type==='essay'&&/^\d+\./.test(tx)){cs.items.push({type:'essay',q:tx.replace(/^\d+\.\s*/,'')})}
+    }
+    if(cs)examModel.sections.push(cs);
+  }
+  function parseKey(txt){
+    const lines=txt.split('\n').map(t).filter(Boolean),k={mcq:{},tf:{},id:{}};
+    let cur=null;
+    for(const l of lines){
+      if(/multiple choice/i.test(l))cur='mcq';
+      else if(/true or false/i.test(l))cur='tf';
+      else if(/identification/i.test(l))cur='id';
+      const m=l.match(/^(\d+)\.\s*([A-Z]|True|False)$/i);
+      if(m&&cur)k[cur][m[1]]=m[2];
+    }return k;
+  }
+  function rExam(){
+    const a=document.getElementById('examArea');a.innerHTML='';
+    document.getElementById('examTitle').textContent=examModel.title;
+    let i=0,map=[];
+    examModel.sections.forEach(s=>{
+      const sec=document.createElement('div');sec.className='section';
+      const h=document.createElement('div');h.textContent=s.title;h.style.fontWeight='700';sec.appendChild(h);
+      s.items.forEach(it=>{
+        i++;const q=document.createElement('div');q.className='q';
+        q.innerHTML=`<div class='q-title'><span style='color:var(--muted)'>${i}.</span> ${t(it.q)}</div>`;
+        if(it.type==='mcq'){
+          it.choices.forEach(c=>{
+            const l=document.createElement('label');l.className='option';
+            l.innerHTML=`<input type='radio' name='q_${i}' value='${c}'>${c}`;q.appendChild(l);
+          });
+        }else if(it.type==='tf'){
+          ['True','False'].forEach(v=>{
+            const l=document.createElement('label');l.className='option';
+            l.innerHTML=`<input type='radio' name='q_${i}' value='${v}'>${v}`;q.appendChild(l);
+          });
+        }else if(it.type==='id'){
+          q.innerHTML+=`<input type='text' name='q_${i}' placeholder='Your answer'>`;
+        }else if(it.type==='essay'){
+          q.innerHTML+=`<textarea class='essay-area' name='q_${i}'></textarea>`;
+        }
+        sec.appendChild(q);map.push({i,type:it.type,q:it.q});
+      });
+      a.appendChild(sec);
+    });
+    a.dataset.map=JSON.stringify(map);
+  }
+  function norm(s){return t(s||'').toLowerCase()}
+  async function grade(){
+    const key=getKey(),map=JSON.parse(document.getElementById('examArea').dataset.map||'[]');
+    let auto=0,max=0,res=[];
+    map.forEach(m=>{
+      const nm='q_'+m.i;let ans='',corr=null,score=null;
+      if(m.type==='mcq'||m.type==='tf'){
+        ans=document.querySelector(`[name='${nm}']:checked`)?.value||'';
+        const ref=key?.[m.type]?.[m.i];if(ref){corr=ref;score=norm(ans)==norm(ref)?1:0;auto+=score;max++;}
+      }else if(m.type==='id'){
+        ans=document.querySelector(`[name='${nm}']`)?.value||'';const ref=key?.id?.[m.i];
+        if(ref){corr=ref;score=norm(ans)==norm(ref)?1:0;auto+=score;max++;}
+      }else if(m.type==='essay'){ans=document.querySelector(`[name='${nm}']`)?.value||'';}
+      res.push({num:m.i,type:m.type,q:m.q,ans,corr,score});
+    });
+    const payload={
+      student:{name:document.getElementById('studentName').value,email:document.getElementById('studentEmail').value},
+      title:examModel.title,summary:{auto, max},answers:res,essays:res.filter(r=>r.type==='essay')
+    };
+    return payload;
+  }
+  document.getElementById('renderBtn').onclick=()=>{const v=document.getElementById('examText').value;if(!v)return alert('Paste exam HTML first');parseExam(v);rExam()};
+  document.getElementById('fetchBtn').onclick=async()=>{try{const r=await fetch('/fetch_exam.php');document.getElementById('examText').value=await r.text();alert('Fetched exam, click Render')}catch(e){alert('Fetch placeholder only')}};
+  document.getElementById('submitBtn').onclick=async()=>{const p=await grade();const f=document.getElementById('feedback');f.innerHTML=`<div class='result good'>Auto Score: ${p.summary.auto}/${p.summary.max}</div>`;window._payload=p};
+  document.getElementById('previewPayloadBtn').onclick=async()=>{const p=window._payload||await grade();const w=window.open();w.document.write('<pre>'+JSON.stringify(p,null,2)+'</pre>');};
+})();
+</script>
+</main>
+</body>
+</html>
