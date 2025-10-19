@@ -69,5 +69,5 @@ It can also:
 
 ### 1️⃣ Clone the repository
 ```bash
-git clone https://github.com/YOUR-USERNAME/exam-miner-2.0.git
+git clone https://github.com/Itzeiaa/exam-miner-2.0.git
 cd exam-miner-2.0
