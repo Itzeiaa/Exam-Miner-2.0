@@ -1083,7 +1083,7 @@ async function callModelStrict(prompt, model){
     url: "https://exam-miner.com/api/v1/chat/completions.php",
     init: {
       method:"POST",
-      headers:{ "Content-Type":"application/json", "Authorization":apikey, "HTTP-Referer":"https://exam-miner.site", "X-Title":"Exam Miner 2.0" },
+      headers:{ "Content-Type":"application/json", "Authorization":apikey, "X-Title":"Exam Miner 2.0"},
       body: JSON.stringify(payload)
     },
     promptTextForToks: prompt
@@ -1192,7 +1192,9 @@ function extractQuestions(block){
       continue;
     }
 
-    if (/^_*\s*\d+[\.\)]\s+/.test(t.trim())) q.push(t.trim());
+    // if (/^_*\s*\d+[\.\)]\s+/.test(t.trim())) q.push(t.trim()); // 0970
+    //if (/^_*\s*\d+\s*[\.\)]\s+/.test(t.trim())) q.push(t.trim()); // 097079
+    if (/^(?:\s*\[\[FIG:\d+\]\]\s*)*_*\s*\d+[\.\)]\s+/.test(t.trim())) q.push(t.trim());
     else if (q.length) q[q.length-1] += "\n" + t;
   }
   return { items:q, answerKeyText:answerLines.join("\n") };
@@ -1201,11 +1203,10 @@ function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floo
 
 
 
- function renderMCQItem(txt, idx){
-  const body = s(txt).replace(/^\s*\d+[\.)]\s*/,'').trim();
-
+// function renderMCQItem(txt, idx){
+//  const body = s(txt).replace(/^\s*\d+[\.)]\s*/,'').trim();
+/* 0970
   // split stem vs choices
-  // 0970 const choiceStart = body.search(/\s+A\.\s+/);
   const choiceStart = body.search(/(?:^|\n)\s*A\.\s+/);
   const stemPart = choiceStart >= 0 ? body.slice(0, choiceStart) : body;
   const rest = choiceStart >= 0 ? body.slice(choiceStart) : '';
@@ -1216,7 +1217,6 @@ function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floo
   : stripFigTokens(stemPart);
 
   // parse choices
-  // 0970 const m = rest.match(/^(?:\s*A\.\s*)(.*?)(?:\s+B\.\s*)(.*?)(?:\s+C\.\s*)(.*?)(?:\s+D\.\s*)(.*)$/s);
   const m = rest.match(/(?:^|\n)\s*A\.\s*(.*?)(?:^|\n)\s*B\.\s*(.*?)(?:^|\n)\s*C\.\s*(.*?)(?:^|\n)\s*D\.\s*(.*)$/s);
   if(!m){
     return `<div style="margin:8px 0;"><b>${idx}.</b> ${stemWith}</div>`;
@@ -1234,10 +1234,111 @@ function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floo
     `<div style="margin-left:22px">D. ${norm(Draw)}</div>`
   ].join('\n');
 }
-  
+*/
 
+// function renderMCQItem(txt, idx){
+//  const body = String(txt || '').replace(/^\s*\d+[\.)]\s*/,'').trim();
+/* 097079
+  // Accept A., A), (A) — at start of line or next line
+  const aLabel = '(?:\\(?A\\)?[.)])';
+  const bLabel = '(?:\\(?B\\)?[.)])';
+  const cLabel = '(?:\\(?C\\)?[.)])';
+  const dLabel = '(?:\\(?D\\)?[.)])';
 
+  const choiceStart = body.search(new RegExp('(?:^|\\n)\\s*' + aLabel + '\\s+'));
+  const stemPart = choiceStart >= 0 ? body.slice(0, choiceStart) : body;
+  const rest = choiceStart >= 0 ? body.slice(choiceStart) : '';
 
+  const stemWith = FIG_ALLOWED.has('Multiple Choice')
+    ? injectInlineFiguresIntoHtml(stemPart)
+    : stripFigTokens(stemPart);
+
+  const rx = new RegExp(
+    '(?:^|\\n)\\s*' + aLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + bLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + cLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + dLabel + '\\s*(.*)$',
+    's'
+  );
+  const m = rest.match(rx);
+  if(!m){
+    return `<div style="margin:8px 0;"><b>${idx}.</b> ${stemWith}</div>`;
+  }
+
+  const [, Araw, Braw, Craw, Draw] = m;
+  // keep figures in choices if MCQ is allowed
+  const norm = v => {
+    const txt = String(v || '');
+    return (FIG_ALLOWED.has('Multiple Choice')
+      ? injectInlineFiguresIntoHtml(txt)
+      : stripFigTokens(txt)
+    ).trim() || '&nbsp;';
+  };
+
+  return [
+    `<div style="margin:8px 0 2px 0;"><b>${idx}.</b> ${stemWith}</div>`,
+    `<div style="margin-left:22px">A. ${norm(Araw)}</div>`,
+    `<div style="margin-left:22px">B. ${norm(Braw)}</div>`,
+    `<div style="margin-left:22px">C. ${norm(Craw)}</div>`,
+    `<div style="margin-left:22px">D. ${norm(Draw)}</div>`
+  ].join('\n');
+}
+
+*/
+// 097079
+function stripLeadingNumber(s){
+  // optional FIG token(s), optional leading underscore, then 1. / 1)
+  return String(s||'').replace(/^\s*(?:\[\[FIG:\d+\]\]\s*)*_?\s*\d+[\.)]\s*/,'');
+}
+
+function renderMCQItem(txt, idx){
+  // const body = String(txt || '').replace(/^\s*\d+[\.)]\s*/,'').trim();
+  const body = stripLeadingNumber(txt).trim();
+
+  const aLabel='(?:\\(?A\\)?[.)])', bLabel='(?:\\(?B\\)?[.)])',
+        cLabel='(?:\\(?C\\)?[.)])', dLabel='(?:\\(?D\\)?[.)])';
+
+  const choiceStart = body.search(new RegExp('(?:^|\\n)\\s*' + aLabel + '\\s+'));
+  const stemPart = choiceStart >= 0 ? body.slice(0, choiceStart) : body;
+  const rest = choiceStart >= 0 ? body.slice(choiceStart) : '';
+
+  const stemWith = FIG_ALLOWED.has('Multiple Choice')
+    ? injectInlineFiguresIntoHtml(stemPart)
+    : stripFigTokens(stemPart);
+
+  const rx = new RegExp(
+    '(?:^|\\n)\\s*' + aLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + bLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + cLabel + '\\s*(.*?)' +
+    '(?:^|\\n)\\s*' + dLabel + '\\s*(.*)$', 's'
+  );
+  const m = rest.match(rx);
+
+  // Fallback: show whatever text we have rather than a blank
+  if(!m){
+    const raw = FIG_ALLOWED.has('Multiple Choice')
+      ? injectInlineFiguresIntoHtml(body)
+      : stripFigTokens(body);
+    return `<div style="margin:8px 0;"><b>${idx}.</b> ${raw.replace(/\n/g,'<br>')}</div>`;
+  }
+
+  const [, Araw, Braw, Craw, Draw] = m;
+  const norm = v => {
+    const txt = String(v || '');
+    return (FIG_ALLOWED.has('Multiple Choice')
+      ? injectInlineFiguresIntoHtml(txt)
+      : stripFigTokens(txt)
+    ).trim() || '&nbsp;';
+  };
+
+  return [
+    `<div style="margin:8px 0 2px 0;"><b>${idx}.</b> ${stemWith}</div>`,
+    `<div style="margin-left:22px">A. ${norm(Araw)}</div>`,
+    `<div style="margin-left:22px">B. ${norm(Braw)}</div>`,
+    `<div style="margin-left:22px">C. ${norm(Craw)}</div>`,
+    `<div style="margin-left:22px">D. ${norm(Draw)}</div>`
+  ].join('\n');
+}
 
 function renderMatchingBlock(text){
   const content = (window.DOMPurify ? DOMPurify.sanitize(text) : text);
@@ -1278,7 +1379,8 @@ function renderExamFromBlocks(blocks, meta, selectedFormats=null, doShuffle=fals
         (items).forEach((txt,i)=>{ lines.push(renderMCQItem(txt, i+1)); });
       } else {
         (items).forEach((txt,i)=>{
-          let body = s(txt).replace(/^\s*_?\s*\d+[\.)]\s*/,""); 
+          // let body = s(txt).replace(/^\s*_?\s*\d+[\.)]\s*/,"");  // 097079
+          let body = stripLeadingNumber(txt);
           if (fmt==="True or False") body = normalizeTFStem(body);
           // const injected = injectInlineFiguresIntoHtml(body); // 0970
           const injected = FIG_ALLOWED.has(fmt)
@@ -1307,7 +1409,7 @@ async function summarizeContent(text){
     url: "https://exam-miner.com/api/v1/chat/completions.php",
     init: {
       method:"POST",
-      headers:{ "Content-Type":"application/json","Authorization":apikey,"HTTP-Referer":"https://ivnx9.github.io","X-Title":"Exam Miner 2.0"},
+      headers:{ "Content-Type":"application/json", "Authorization":apikey, "X-Title":"Exam Miner 2.0"},
       body: JSON.stringify(payload)
     },
     promptTextForToks: text
@@ -1327,43 +1429,7 @@ function setSaveEnabled(on){
   else { b.disabled=true; b.setAttribute('aria-disabled','true'); b.setAttribute('title','Nothing to save yet'); }
 }
 
-/* ================== figure helpers to match the images to question ==================== */
-/* 0970
-function attachFiguresByCaption(blocks, figPlan) {
-  if (!figPlan || !figPlan.captions?.length) return blocks;
 
-  const captions = figPlan.captions.map(c => c.toLowerCase());
-  for (let n = 0; n < captions.length; n++) {
-    const cap = captions[n];
-    let bestMatch = null;
-    let bestScore = 0;
-
-    // Simple keyword match between caption words and question text
-    for (let bi = 0; bi < blocks.length; bi++) {
-      for (let ii = 0; ii < blocks[bi].items.length; ii++) {
-        const qtext = blocks[bi].items[ii].toLowerCase();
-        let overlap = 0;
-        for (const word of cap.split(/\s+/)) {
-          if (word.length >= 3 && qtext.includes(word)) overlap++;
-        }
-        if (overlap > bestScore) {
-          bestScore = overlap;
-          bestMatch = { bi, ii };
-        }
-      }
-    }
-
-    if (bestMatch) {
-      const token = `[[FIG:${n + 1}]]`;
-      const item = blocks[bestMatch.bi].items[bestMatch.ii];
-      // Inject token after question number
-      blocks[bestMatch.bi].items[bestMatch.ii] = injectTokenIntoStem(item, token, blocks[bestMatch.bi].format);
-    }
-  }
-
-  return blocks;
-}
-*/
 function attachFiguresByCaption(blocks, figPlan) {
   if (!figPlan || !figPlan.captions?.length) return blocks;
 
@@ -1404,6 +1470,7 @@ function listHasFigTokens(items) {
 
 // Insert a FIG token into the STEM of an item.
 // For MCQ, we inject it right before " A." (first choice). For others, at the end of the first line.
+/* 0970
 function injectTokenIntoStem(item, token, format) {
   const s = String(item);
   if (format === 'Multiple Choice') {
@@ -1421,73 +1488,39 @@ function injectTokenIntoStem(item, token, format) {
     return s.slice(0, nl).trimEnd() + ' ' + token + s.slice(nl);
   }
 }
-
-// --- ADD: put near autoInjectFigTokens ---
-/* 0970
-function ensureOnePerFigure(blocks, figPlan) {
-  if (!figPlan || !figPlan.captions || !figPlan.captions.length) return blocks;
-
-  // Gather all items in display order with references
-  const holders = [];
-  blocks.forEach((b, bi) => {
-      if(!FIG_ALLOWED.has(b.format)) return;
-    b.items.forEach((txt, ii) => {
-      holders.push({ bi, ii, fmt: b.format, txt });
-    });
-  });
-
-  // Helper: does item contain any FIG token?
-  const hasAnyFig = s => /\[\[FIG:\d+\]\]/.test(s);
-  const injectIntoStem = (item, token, fmt) => injectTokenIntoStem(item, token, fmt); // REMOVE
-
-  // 1) Build a set of figures already used
-  const used = new Set();
-  holders.forEach(h => {
-    const m = String(h.txt).match(/\[\[FIG:(\d+)\]\]/g);
-    if (m) m.forEach(tok => used.add(Number(tok.match(/\d+/)[0])));
-  });
-
-  // 2) For each figure n that isn't used, inject it into the first item without any FIG
-  const preferred = Array.from(FIG_ALLOWED); //['Multiple Choice','Identification'];
-
-  for (let n = 1; n <= figPlan.captions.length; n++) {
-    if (used.has(n)) continue;
-
-    // find the first eligible item (no existing FIG)
-    let slot = holders.find(h => !hasAnyFig(h.txt) && preferred.includes(h.fmt));
-    if (!slot) continue; // nothing to use; give up silently
-
-    const token = `[[FIG:${n}]]`;
-    const newTxt = injectIntoStem(slot.txt, token, slot.fmt);
-
-    // write back
-    blocks[slot.bi].items[slot.ii] = newTxt;
-    used.add(n);
-  }
-
-  // 3) If any figure is used more than once, trim extras (keep first occurrence)
-  const firstSeen = new Set();
-  holders.forEach(h => {
-    const matches = [...String(blocks[h.bi].items[h.ii]).matchAll(/\[\[FIG:(\d+)\]\]/g)];
-    if (!matches.length) return;
-    const keep = new Set();
-    const tokens = matches.map(m => Number(m[1])); // REMOVE
-    let txt = blocks[h.bi].items[h.ii];
-
-    tokens.forEach(num => {
-      if (firstSeen.has(num)) {
-        // remove this duplicate token
-        txt = txt.replace(new RegExp(`\\s*\\[\\[FIG:${num}\\]\\]`,'g'), '');
-      } else {
-        if (!keep.has(num)) keep.add(num), firstSeen.add(num);
-      }
-    });
-    blocks[h.bi].items[h.ii] = txt;
-  });
-
-  return blocks;
-}
 */
+
+function injectTokenIntoStem(item, token, format) {
+  const str = String(item);
+  /* 097079
+  if (format === 'Multiple Choice') {
+    const rx = /(?:^|\n)\s*(?:\(?A\)?[.)])\s/;
+    const m = str.match(rx);
+    if (m) {
+      // insert right before the first choice label
+      return str.slice(0, m.index).trimEnd() + ' ' + token + str.slice(m.index);
+    }
+    return str.trimEnd() + ' ' + token;
+  }
+  */
+  
+  if (format === 'Multiple Choice') {
+      const rx = /(?:^|\n)\s*(?:\(?A\)?[.)])\s/;
+      const m = str.match(rx);
+      if (m) {
+        // insert token and force a newline so A. remains at start of a line
+        const before = str.slice(0, m.index).trimEnd();
+        const after  = str.slice(m.index);
+        return `${before} ${token}\n${after}`;
+      }
+      // fallback: add token at end of stem on its own line
+      return `${str.trimEnd()} ${token}\n`;
+    } else {
+    const nl = str.indexOf('\n');
+    if (nl === -1) return str.trimEnd() + ' ' + token;
+    return str.slice(0, nl).trimEnd() + ' ' + token + str.slice(nl);
+  }
+}
 
 function ensureOnePerFigure(blocks, figPlan) {
   if (!figPlan || !figPlan.captions || !figPlan.captions.length) return blocks;
@@ -1589,7 +1622,30 @@ function autoInjectFigTokens(items, format, figPlan) {
   }
   return out;
 }
+/* ============== Validator helpers (097079) ========== */
 
+// Accept A., A), (A) etc.
+const CH_A = '(?:\\(?A\\)?[.)])';
+const CH_B = '(?:\\(?B\\)?[.)])';
+const CH_C = '(?:\\(?C\\)?[.)])';
+const CH_D = '(?:\\(?D\\)?[.)])';
+
+function mcqHasFourChoices(s){
+  const rx = new RegExp(
+    '(?:^|\\n)\\s*' + CH_A + '\\s+[\\s\\S]*?' +
+    '(?:^|\\n)\\s*' + CH_B + '\\s+[\\s\\S]*?' +
+    '(?:^|\\n)\\s*' + CH_C + '\\s+[\\s\\S]*?' +
+    '(?:^|\\n)\\s*' + CH_D + '\\s+',
+    'i'
+  );
+  return rx.test(String(s||''));
+}
+
+function nonEmptyStem(s){
+  // after removing the leading number like "1." or "1)"
+  const stem = String(s||'').replace(/^\s*_?\s*\d+\s*[\.)]\s*/,'').trim();
+  return stem.length >= 5; // tweak if you want
+}
 
 /* ============ Matching type helpers to convert it to 1 set of matching type only ========= */
 function parseMatchingBlock(blockText){
@@ -1690,24 +1746,28 @@ Return ONLY a JSON array of ${missing} objects, each like:
       // (requires parseMatchingBlock() + combineMatchingBlocks() helpers added earlier)
       const single = combineMatchingBlocks(keep, t.count);
       keep = [single];
-      /* 0970
-      // Trim to exact pair count
-      const desired = t.count; let pairsSoFar = 0; const trimmed = [];
-      for (let i = 0; i < keep.length; i++) {
-        const block = keep[i];
-        const aCount = (block.match(/^\d+\.\s+/gmi) || []).length;
-        const bCount = (block.match(/^[a-z]\.\s+/gmi) || []).length;
-        const pairs = Math.min(aCount, bCount);
-        if (pairsSoFar >= desired) break;
-        const room = desired - pairsSoFar;
-        if (pairs <= room) { trimmed.push(block); pairsSoFar += pairs; }
-        else { trimmed.push(trimMatchingBlockPairs(block, room)); pairsSoFar = desired; break; }
-      }
-      keep = trimmed;
       
-      */
     } else {
-      let items = extractQuestions(raw).items;
+        
+        let items = extractQuestions(raw).items;
+      // 097079
+        if (t.format === 'Multiple Choice') {
+          items = items.filter(mcqHasFourChoices);
+        } else if (t.format === 'True or False') {
+         
+         // items = items.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,''))  097079
+           //            .map(normalizeTFStem)
+             //          .filter(nonEmptyStem);
+                       
+            items = items.map(x => stripLeadingNumber(x))
+                         .map(normalizeTFStem)
+                         .filter(s => s.trim().length > 0);
+        } else {
+          // Identification / Essay: just require a non-empty stem
+          items = items.filter(nonEmptyStem);
+        }
+              
+      
       if (t.format === 'True or False'){
         items = items.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,'')).map(normalizeTFStem).filter(s => s.trim().length > 0); // 0970
       }
@@ -1726,6 +1786,17 @@ Plain text only.`.trim();
         let more = await callModelStrict(follow, model);
         more = standardizeTerms(stripModelNoise(decodeEntities(more)));
         let moreItems = extractQuestions(more).items;
+        
+        if (t.format === 'Multiple Choice') {
+          moreItems = moreItems.filter(mcqHasFourChoices);
+        } else if (t.format === 'True or False') {
+          moreItems = moreItems.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,''))
+                               .map(normalizeTFStem)
+                               .filter(nonEmptyStem);
+        } else {
+          moreItems = moreItems.filter(nonEmptyStem);
+        }
+        
         if (t.format === 'True or False'){
           moreItems = moreItems.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,'')).map(normalizeTFStem);
         }
@@ -1768,37 +1839,6 @@ async function generateAnswerKeyFor(html, model){
     model)).trim())));
 }
 
-/* ================== MAIN FLOW (with server-side image describe + FIG tokens) ================== */
-/* 0970
-function ensureAtLeastOnePerSelectedFigure(blocks){
-  const figs = window.__selectedFigures || [];
-  if (!figs.length) return blocks;
-  const used = new Set();
-  const figRe = /\[\[FIG:(\d+)\]\]/g;
-
-  for (const b of blocks){
-    if (b.format === 'Matching Type') continue;
-    for (const it of b.items){
-      let m; while ((m = figRe.exec(s(it)))) used.add(Number(m[1]));
-    }
-  }
-  for (let n = 1; n <= figs.length; n++){
-    if (used.has(n)) continue;
-    outer: for (const b of blocks){
-      if (b.format === 'Matching Type') continue;
-      for (let i=0;i<b.items.length;i++){
-        if (!figRe.test(s(b.items[i]))){
-          b.items[i] = `[[FIG:${n}]] ` + s(b.items[i]);
-          used.add(n);
-          break outer;
-        }
-      }
-    }
-  }
-  return blocks;
-}
-*/
-
 function ensureAtLeastOnePerSelectedFigure(blocks){
   const figs = window.__selectedFigures || [];
   if (!figs.length) return blocks;
@@ -1821,7 +1861,8 @@ function ensureAtLeastOnePerSelectedFigure(blocks){
       if (!FIG_ALLOWED.has(b.format)) continue;
       for (let i=0;i<b.items.length;i++){
         if (!figRe.test(String(b.items[i]))){
-          b.items[i] = `[[FIG:${n}]] ` + String(b.items[i]);
+          // b.items[i] = `[[FIG:${n}]] ` + String(b.items[i]); 0970
+          b.items[i] = injectTokenIntoStem(String(b.items[i]), `[[FIG:${n}]]`, b.format);
           used.add(n);
           break outer;
         }
