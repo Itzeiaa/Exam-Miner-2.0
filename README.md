@@ -48,7 +48,7 @@ It can also:
 
 | Dashboard | Exam Generator |
 |:----------:|:---------------:|
-| ![Dashboard](https://exam-miner.com/images/dashboard.png) | ![Exam Generator](https://exam-miner.com/images/generate.png) |
+| ![Dashboard](https://exam-miner.com/images/dashboard.png) | ![Exam Generator](https://exam-miner.com/images/generator.png) |
 
 ---
 
