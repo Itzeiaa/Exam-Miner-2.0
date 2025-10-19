@@ -46,9 +46,9 @@ It can also:
 
 ## 🖼️ Screenshots
 
-| Dashboard | Exam Generator |
+| Dashboard | Exam Generator | Mobile View |
 |:----------:|:---------------:|
-| ![Dashboard](https://exam-miner.com/images/dashboard.png) | ![Exam Generator](https://exam-miner.com/images/generator.png) |
+| ![Dashboard](https://exam-miner.com/images/dashboard.png) | ![Exam Generator](https://exam-miner.com/images/generator.png) | ![Mobile view](https://exam-miner.com/images/mobile.png) |
 
 ---
 
