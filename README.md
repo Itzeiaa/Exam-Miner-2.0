@@ -1,6 +1,6 @@
 # 🧠 Exam-Miner 2.0
 
-![Exam-Miner Banner](https://exam-miner.com/images/logo.png)
+![Exam-Miner Banner](https://exam-miner.com/images/banner.jpg)
 
 > **AI-Powered Exam & Quiz Generator** that automatically creates high-quality test questions from your uploaded learning materials — supporting **PDF**, **Word**, and **PowerPoint** files.
 
