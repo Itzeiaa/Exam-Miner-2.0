@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0"/>
+  <title>Exam Miner 2.0 - Generate Exam</title>
+  @vite('resources/css/app.css')
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"/>
+
+    <!-- libs (order matters) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-to-pdfmake@2.4.5/browser.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.4/purify.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html-docx-js/dist/html-docx.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <!-- pdf.js (for reading PDFs only) -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+  </script>
+
+
+  <style>
+    /* --------- Global look --------- */
+    @keyframes gradientShift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+    .gradient-animated { background: linear-gradient(-45deg,#1e3a8a,#3b82f6,#60a5fa,#93c5fd,#1e40af,#1d4ed8); background-size:400% 400%; animation: gradientShift 15s ease infinite; }
+    :root { --editor-width: 794px; }
+
+    /* Editor page look (kept) */
+    .editor-wrap { margin: 16px auto; max-width: var(--editor-width); }
+    #output {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
+      font-size: 14pt; line-height: 1.6; white-space: normal; word-wrap: break-word;
+      color: #111827;
+      min-height: 900px; padding: 72px 64px; background: #fff;
+      border: 1px solid #e5e7eb; box-shadow: 0 0 6px rgba(0,0,0,.08);
+      outline: none;
+    }
+    .page-break { page-break-before: always; }
+
+    /* Loader progress (kept) */
+    .progress-wrap { margin-top:8px; height:10px; border-radius:999px; background:#eef2ff; overflow:hidden; }
+    .progress-bar  { height:100%; width:0%; background: linear-gradient(90deg,#3b82f6,#60a5fa); transition:width .25s ease; }
+    .spinner { animation: spin 1s linear infinite; }
+    @keyframes spin { from{ transform:rotate(0deg);} to{ transform:rotate(360deg);} }
+
+    /* --------- Responsive layout helpers --------- */
+    @media (max-width: 767.98px) {
+      .only-desktop { display: none !important; }
+      .only-mobile  { display: block !important; }
+      /* tighter editor padding on mobile */
+      #output { padding: 28px 20px; min-height: 600px; }
+    }
+    @media (min-width: 768px) {
+      .only-desktop { display: block !important; }
+      .only-mobile  { display: none !important; }
+    }
+
+    /* --------- Mobile top nav (CSS-only using <details/summary>) --------- */
+    .mnav details > summary {
+      list-style: none; cursor: pointer; user-select: none;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .25rem 1rem;
+    }
+    .mnav details > summary::-webkit-details-marker { display: none; }
+    .mnav .chev { transition: transform .2s ease; }
+    .mnav details[open] .chev { transform: rotate(180deg); }
+    .mnav .menu {
+      padding: .5rem 1rem 1rem;
+      border-top: 1px solid rgba(0,0,0,.06);
+    }
+    .mnav a.mlink {
+      display: flex; align-items: center; gap: .5rem;
+      padding: .75rem .75rem; border-radius: .75rem;
+      font-weight: 600;
+    }
+    .mnav a.mlink:hover { background: #f3f4f6; }
+
+    /* --------- Subtle control polish for mobile touch targets --------- */
+    .input-lg { padding: .875rem 1rem; border-radius: .75rem; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: .5rem; font-weight: 600; border-radius: .75rem;
+      transition: transform .12s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .btn:active { transform: translateY(1px) scale(.99); }
+    .btn-primary { background-image: linear-gradient(to right, #3b82f6, #2563eb); color: #fff; }
+    .btn-primary:hover { background-image: linear-gradient(to right, #2563eb, #1d4ed8); }
+    .btn-muted { background: #f9fafb; border: 1px solid #e5e7eb; }
+    .btn-muted:hover { background: #f3f4f6; }
+    .card { background:#fff; border:1px solid #f1f5f9; border-radius: 1rem; box-shadow: 0 10px 30px rgba(2,6,23,.04); overflow: hidden; }
+    .card-head { padding: 1rem 1.25rem; border-bottom: 1px solid #eef2f7; }
+    .card-body { padding: 1.25rem; }
+
+    /* Drag & drop zone look */
+    #dropZone {
+      transition: border-color .2s ease, background .2s ease;
+    }
+    #dropZone:hover { background: #f8fafc; border-color: #93c5fd; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Animated background -->
+  <div class="absolute inset-0 gradient-animated"></div>
+
+  <!-- Mobile top navigation (no JS) -->
+  <header class="only-mobile mnav sticky top-0 z-50 bg-white/80 backdrop-blur border-b border-gray-200">
+    <details>
+      <summary>
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow">
+           <img style="width:30px" src="/images/icon.png"></img>
+          </div>
+          <div class="leading-tight">
+            <div class="font-bold text-gray-900">Exam Miner 2.0</div>
+            <div class="text-xs text-gray-500">Generate Exam</div>
+          </div>
+        </div>
+        <i class="fas fa-chevron-down text-gray-500 chev"></i>
+      </summary>
+      <nav class="menu">
+        <a href="/dashboard" class="mlink"><i class="fas fa-tachometer-alt text-gray-600 w-5"></i><span>Dashboard</span></a>
+        <a href="/generate-exam" class="mlink bg-blue-50 text-blue-700"><i class="fas fa-plus w-5"></i><span>Generate Exam</span></a>
+        <a href="/my-exams" class="mlink"><i class="fas fa-file-alt w-5"></i><span>My Exams</span></a>
+        <a href="/profile" class="mlink"><i class="fas fa-user w-5"></i><span>Profile</span></a>
+      </nav>
+    </details>
+  </header>
+
+  <div class="flex relative z-10">
+    <!-- Desktop Sidebar -->
+    <aside class="only-desktop w-64 bg-white shadow-2xl min-h-screen border-r border-gray-200 relative">
+      <a href="/dashboard" class="flex items-center p-6 border-b border-gray-100 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 transition-all duration-200">
+        <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center mr-3 shadow-lg">
+          <img style="width:30px" src="/images/icon.png"></img>
+        </div>
+        <h1 class="text-xl font-bold text-white">Exam Miner 2.0</h1>
+      </a>
+
+      <nav class="mt-6 px-4">
+        <a href="/dashboard" class="flex items-center px-4 py-3 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all duration-200 mb-2 group">
+          <i class="fas fa-tachometer-alt mr-3 group-hover:scale-110 transition-transform duration-200"></i>
+          Dashboard
+        </a>
+        <a href="/generate-exam" class="flex items-center px-4 py-3 text-white bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl shadow-lg mb-2 transform hover:scale-105 transition-all duration-200">
+          <i class="fas fa-plus mr-3"></i>
+          Generate Exam
+        </a>
+        <a href="/my-exams" class="flex items-center px-4 py-3 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all duration-200 mb-2 group">
+          <i class="fas fa-file-alt mr-3 group-hover:scale-110 transition-transform duration-200"></i>
+          My Exams
+        </a>
+        <a href="/profile" class="flex items-center px-4 py-3 text-gray-600 hover:bg-blue-50 hover:text-blue-600 rounded-xl transition-all duration-200 mb-2 group">
+          <i class="fas fa-user mr-3 group-hover:scale-110 transition-transform duration-200"></i>
+          Profile
+        </a>
+      </nav>
+
+      <div class="absolute bottom-0 w-64 p-6 border-t border-gray-100 bg-gray-50">
+        <div class="flex items-center mb-4">
+          <div class="w-10 h-10 rounded-full mr-3 shadow-md border border-gray-300 overflow-hidden">
+            <img id="profilePic" src="/images/default-avatar.png" alt="Profile Picture" class="w-full h-full object-cover">
+          </div>
+          <div>
+            <p id="displayName" class="font-bold text-gray-900">User</p>
+            <a href="/profile" class="text-sm text-blue-600 hover:text-blue-700 transition-colors duration-200">View Profile</a>
+          </div>
+        </div>
+        <button id="logoutBtn" class="w-full bg-white text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-100 border border-gray-200 shadow-sm transition-all duration-200 hover:shadow-md">
+          Logout
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main class="flex-1 px-2 pt-1 pb-2 sm:px-4 sm:pt-2 sm:pb-4 md:px-6 md:pt-4 md:pb-6 w-full">
+      <!-- Header -->
+      <div class="mb-0 md:mb-1" style="margin-top: -2.5rem;">
+        <div class="flex items-center mb-2">
+          <a href="/dashboard" class="w-12 h-12 sm:w-16 sm:h-16 bg-white rounded-2xl flex items-center justify-center mr-3 sm:mr-4 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 cursor-pointer">
+            <i class="fas fa-arrow-left text-blue-500 text-xl sm:text-2xl"></i>
+          </a>
+          <div>
+            <h1 class="text-2xl sm:text-4xl font-bold text-gray-900 mb-1 sm:mb-2">Generate Exam</h1>
+            <p class="text-gray-600">Upload learning materials, pick a TOS, and let AI draft your exam.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div id="alertBox" style="background-color: white" class="hidden fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg bg-gray-800 text-white"></div>
+
+      <!-- Section A: Upload & Meta -->
+      <section class="card mb-6" style="margin-top: -0.5rem;">
+        <div class="card-head">
+          <h2 class="text-lg sm:text-xl font-bold text-gray-900">Section A: Upload & Meta</h2>
+        </div>
+        <div class="card-body grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Upload -->
+          <div class="lg:col-span-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Upload File (PDF, DOCX, PPTX)</label>
+            <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center">
+              <div class="flex flex-col items-center">
+                <i class="fas fa-cloud-upload-alt text-gray-400 text-3xl mb-3"></i>
+                <p class="text-gray-700 mb-2">Drag & drop a file here, or click</p>
+                <input id="material" type="file" class="hidden" accept=".pdf,.docx,.pptx,.xlsx,.csv,.txt,.html,.htm" />
+                <button type="button" onclick="document.getElementById('material').click()" class="btn btn-primary px-4 py-2">Choose File</button>
+                <button type="button" id="scanFigsBtnTop" class="btn btn-muted px-3 py-2 mt-2">
+                  <i class="fas fa-magnifying-glass"></i><span>Scan Figures</span>
+                </button>
+              </div>
+            </div>
+            <div id="fileInfo" class="hidden mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-green-700">
+              <i class="fas fa-check mr-2"></i><span id="fileName"></span>
+            </div>
+          </div>
+
+          <!-- Meta -->
+          <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <input id="subject" type="text" class="w-full input-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Computer Networks"/>
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Topic/Title (used as Exam Title)</label>
+              <input id="topic" type="text" class="w-full input-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., OSI Model"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Grade Level</label>
+              <input id="grade" type="text" class="w-full input-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g., Grade 12"/>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">
+                Model
+                <span class="text-[11px] text-orange-600 italic block mt-1">(Note: currently gemini are only working due to api limitations)</span>
+              </label>
+              <select id="model" class="w-full input-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="gemini/gemini-aistudio:free">Gemini-aistudio (free, faster, limited)</option>
+                <option value="deepseek/deepseek-r1:free">DeepSeek R1 (free, moderate, limited)</option>
+                <!--option value="deepseek/deepseek-r1-0528">DeepSeek R1 (Paid version)</option-->
+                <option value="deepseek/deepseek-chat-v3-0324:free">DeepSeek V3 (free)</option>
+                <option value="mistralai/mistral-small-3.1-24b-instruct:free">Mistral 3.1 (free)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+      
+      <!-- Section A.1: Detected Figures (optional) -->
+<section class="card mb-6">
+  <div class="card-head">
+    <h2 class="text-lg sm:text-xl font-bold text-gray-900">Section A.1: Detected Figures (optional)</h2>
+    <p class="text-sm text-gray-600 mt-1">Pick images to include. Add a caption to help the AI write “Refer to Figure X” items.</p>
+  </div>
+  <div class="card-body">
+    <div class="flex items-center gap-2 mb-3">
+      <button id="scanFigsBtn" type="button" class="btn btn-muted px-3 py-2">
+        <i class="fas fa-image"></i><span>Scan Figures</span>
+      </button>
+      <span id="noFiguresHint" class="text-sm text-gray-500 hidden">No figures detected. That’s fine — your exam will generate without images.</span>
+    </div>
+
+    <div id="figurePanel" class="hidden">
+      <div id="figureGrid" class="grid gap-3"
+           style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));"></div>
+      <div class="mt-3 flex flex-wrap items-center gap-4">
+      </div>
+    </div>
+  </div>
+</section>
+
+
+      <!-- Section B: Exam Type -->
+      <section class="card mb-6">
+        <div class="card-head">
+          <h2 class="text-lg sm:text-xl font-bold text-gray-900">Section B: Exam Type</h2>
+        </div>
+        <div class="card-body grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="md:col-span-2">
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <label class="flex items-center gap-2"><input type="checkbox" value="Multiple Choice" class="format"> <span>Multiple Choice</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" value="True or False" class="format"> <span>True/False</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" value="Identification" class="format"> <span>Identification</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" value="Matching Type" class="format"> <span>Matching Type</span></label>
+              <label class="flex items-center gap-2"><input type="checkbox" value="Essay" class="format"> <span>Essay</span></label>
+            </div>
+          </div>
+
+          <!-- Sets + Difficulty -->
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1"># of Questions</label>
+              <input id="questionCount" type="number" min="1" max="100" value="20" class="w-full input-lg border border-gray-300 focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Number of Sets</label>
+              <select id="numSets" class="w-full input-lg border border-gray-300 focus:ring-2 focus:ring-blue-500">
+                <option value="1" selected>1 Set</option>
+                <option value="2">2 Sets</option>
+                <option value="3">3 Sets</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Difficulty</label>
+              <select id="difficulty" class="w-full input-lg border border-gray-300 focus:ring-2 focus:ring-blue-500">
+                <option value="medium" selected>Medium</option>
+                <option value="easy">Easy</option>
+                <option value="hard">Hard</option>
+              </select>
+            </div>
+
+            <div class="mt-2 flex items-center gap-4 text-sm">
+              <label class="flex items-center"><input id="shuffle" type="checkbox"><span class="ml-2">Shuffle</span></label>
+              <label class="flex items-center"><input id="answerKey" type="checkbox"><span class="ml-2">Include Answer Key</span></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section C: TOS -->
+      <section class="card mb-6">
+        <div class="card-head">
+          <h2 class="text-lg sm:text-xl font-bold text-gray-900">Section C: Table of Specifications</h2>
+          <p class="text-sm text-gray-600 mt-1">Each row must sum to 100% (RU + AA + HOTS). Topic weights should total ~100%.</p>
+        </div>
+        
+        <div class="card-body">
+  <div class="overflow-x-auto md:overflow-visible">
+    <table class="portrait-table min-w-full text-sm border rounded-lg overflow-hidden">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-3 py-2 text-left">Content Area / Topic</th>
+          <th class="px-3 py-2 text-left w-40">Weight % (Topic)</th>
+          <th class="px-3 py-2 text-left w-40">Remember %</th>
+          <th class="px-3 py-2 text-left w-40">Apply/Analyze %</th>
+          <th class="px-3 py-2 text-left w-40">HOTS %</th>
+          <th class="px-3 py-2 text-left w-28">Row Total</th>
+          <th class="px-3 py-2 w-12"></th>
+        </tr>
+      </thead>
+
+      <tbody id="tosBody" class="divide-y">
+        <tr>
+          <td data-label="Content Area / Topic" class="px-3 py-2">
+            <input class="w-full border rounded px-2 py-1"
+                   placeholder="e.g., Chapter 1: Networking Basics" />
+          </td>
+
+          <td data-label="Weight % (Topic)" class="px-3 py-2">
+            <input type="number" min="0" max="100" step="1" value="25"
+                   class="w-full border rounded px-2 py-1" />
+          </td>
+
+          <td data-label="Remember %" class="px-3 py-2">
+            <input type="number" min="0" max="100" step="1" value="40"
+                   class="w-full border rounded px-2 py-1" />
+          </td>
+
+          <td data-label="Apply/Analyze %" class="px-3 py-2">
+            <input type="number" min="0" max="100" step="1" value="40"
+                   class="w-full border rounded px-2 py-1" />
+          </td>
+
+          <td data-label="HOTS %" class="px-3 py-2">
+            <input type="number" min="0" max="100" step="1" value="20"
+                   class="w-full border rounded px-2 py-1" />
+          </td>
+
+          <td data-label="Row Total" class="px-3 py-2 rowTotal">100%</td>
+
+          <td data-label="" class="px-3 py-2 actions">
+            <button type="button" onclick="removeTosRow(this)"
+                    class="text-red-600 hover:text-red-700">
+              <i class="fas fa-times"></i>
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-3 flex flex-wrap items-center gap-3">
+    <button style="padding:8px; margin:5px" type="button" onclick="addTosRow()" class="btn btn-muted px-3 py-2">Add Topic</button>
+    <button style="padding:8px; margin:5px" type="button" onclick="validateTOS()" class="btn btn-muted px-3 py-2">Validate TOS</button>
+    <span id="tosStatus" class="text-sm text-gray-600"></span>
+  </div>
+</div>
+
+        
+        
+        <style>
+        /* Figure cards */
+.fig-card { border:1px solid #e5e7eb; border-radius:.75rem; padding:.5rem; background:#fff; }
+.fig-card img { display:block; width:100%; height:6.5rem; object-fit:contain; border:1px solid #e5e7eb; border-radius:.5rem; }
+
+        
+/* Portrait (stacked) table for small screens */
+@media (max-width: 640px){
+  .portrait-table thead { display: none; }
+
+  .portrait-table,
+  .portrait-table tbody,
+  .portrait-table tr,
+  .portrait-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .portrait-table tr {
+    border: 1px solid #e5e7eb;      /* gray-200 */
+    border-radius: 0.75rem;          /* rounded-xl */
+    background: #fff;
+    margin-bottom: 0.75rem;          /* space between cards */
+    overflow: hidden;
+  }
+
+  .portrait-table td {
+    display: grid;
+    grid-template-columns: 12ch 1fr; /* label | value */
+    gap: .6rem;
+    padding: .6rem .8rem;
+    align-items: center;
+  }
+
+  .portrait-table td::before {
+    content: attr(data-label);
+    font-size: .75rem;               /* text-xs */
+    color: #6b7280;                  /* gray-500 */
+    font-weight: 600;
+    line-height: 1.15;
+  }
+
+  .portrait-table td > input {
+    width: 100%;
+  }
+
+  /* Make the action cell align the button to the right */
+  .portrait-table td.actions {
+    grid-template-columns: 1fr auto;
+  }
+}
+</style>
+
+      </section>
+
+      <!-- Section D: Generate & Edit (header actions) -->
+      <div class="card mb-4">
+        <div class="p-4 sm:p-6 border-b border-gray-100 flex flex-wrap items-center gap-3 justify-between">
+          <h2 class="text-lg sm:text-xl font-bold text-gray-900">Section D: Generate & Edit</h2>
+          <div class="flex flex-wrap items-center gap-3">
+            <button style="padding:8px; margin:5px" id="btnSaveDbTop" class="btn btn-primary px-5 py-2 hidden" disabled title="Nothing to save yet">
+              <i class="fas fa-save"></i><span>Save Exam</span>
+            </button>
+            <button style="padding:8px; margin:5px" id="btnGenerate" class="btn btn-primary px-5 py-2">
+              <i class="fas fa-wand-magic-sparkles"></i><span>Generate Exam</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Loader + progress -->
+        <div id="loaderBox" class="p-4 sm:p-6 hidden">
+          <div class="flex items-start gap-3 text-gray-700">
+            <i class="fas fa-circle-notch spinner mt-1"></i>
+            <div class="flex-1">
+              <div id="loaderMain" class="font-medium">Preparing…</div>
+              <div id="loaderSub" class="text-sm text-gray-500 mt-1">Please wait while we process your file.</div>
+              <div class="progress-wrap mt-2">
+                <div id="progressBar" class="progress-bar"></div>
+              </div>
+              <div id="progressText" class="text-xs text-gray-500 mt-1">0%</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toolbar + editor -->
+        <div id="editorBox" class="p-0 hidden">
+          <div class="px-4 sm:px-6 pt-4 pb-2 border-t border-gray-100">
+            <div class="flex flex-wrap items-center gap-2">
+              <button onclick="execCmd('bold')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Bold"><i class="fas fa-bold"></i></button>
+              <button onclick="execCmd('italic')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Italic"><i class="fas fa-italic"></i></button>
+              <button onclick="execCmd('underline')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Underline"><i class="fas fa-underline"></i></button>
+
+              <select onchange="changeFontSize(this.value)" class="px-2 py-1 border rounded">
+                <option value="">Font Size</option>
+                <option value="12px">12</option><option value="14px">14</option><option value="16px">16</option>
+                <option value="18px">18</option><option value="20px">20</option><option value="24px">24</option>
+                <option value="32px">32</option><option value="36px">36</option>
+              </select>
+
+              <button onclick="execCmd('insertUnorderedList')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Bulleted"><i class="fas fa-list-ul"></i></button>
+              <button onclick="execCmd('insertOrderedList')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Numbered"><i class="fas fa-list-ol"></i></button>
+
+              <button onclick="toggleHeading('H1')" class="px-2 py-1 border rounded hover:bg-gray-50">H1</button>
+              <button onclick="toggleHeading('H2')" class="px-2 py-1 border rounded hover:bg-gray-50">H2</button>
+              <button onclick="toggleHeading('H3')" class="px-2 py-1 border rounded hover:bg-gray-50">H3</button>
+
+              <button onclick="execCmd('justifyLeft')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Left"><i class="fas fa-align-left"></i></button>
+              <button onclick="execCmd('justifyCenter')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Center"><i class="fas fa-align-center"></i></button>
+              <button onclick="execCmd('justifyRight')" class="px-2 py-1 border rounded hover:bg-gray-50" title="Right"><i class="fas fa-align-right"></i></button>
+
+              <button onclick="copyEditor()" class="px-2 py-1 border rounded hover:bg-gray-50" title="Copy"><i class="fas fa-copy"></i></button>
+
+              <div class="ml-auto flex items-center gap-2">
+                <<!--button onclick="downloadPDF()" class="px-3 py-2 border rounded hover:bg-gray-50"><i class="fas fa-file-pdf mr-2"></i>PDF</button-->
+                <!--button onclick="downloadDOCX()" class="px-3 py-2 border rounded hover:bg-gray-50"><i class="fas fa-file-word mr-2"></i>DOCX</button-->
+              </div>
+            </div>
+          </div>
+
+          <div class="editor-wrap">
+            <div id="output" contenteditable="true" class="rounded-b-xl"></div>
+          </div>
+
+          <div class="px-4 sm:px-6 pb-6">
+            <div id="allocNote" class="text-sm text-gray-500"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  
+ <script>
+(() => {
+/* ============================ token / cache / avatar ============================ */
+const TOKEN_KEY='jwt_token', CACHE_KEY='profile_cache', DEFAULT_AVATAR='/images/default-avatar.png';
+const jwt = (localStorage.getItem(TOKEN_KEY)||'').replace(/^Bearer\s+/i,'').replace(/^"|"$/g,'');
+if(!jwt){ location.replace('/login'); return; }
+
+const $ = id => document.getElementById(id);
+
+function parseJwt(t){
+  try{
+    const [,p]=t.split('.');
+    if(!p) return {};
+    const b=p.replace(/-/g,'+').replace(/_/g,'/');
+    const j=decodeURIComponent(atob(b).split('').map(c=>'%'+('00'+c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+    return JSON.parse(j);
+  }catch{ return {}; }
+}
+function readCache(){ try{ return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}'); }catch{ return {}; } }
+
+function approxBase64Bytes(b64=''){
+  const s = String(b64).split(',').pop() || '';
+  const len = s.length - (s.endsWith('==') ? 2 : s.endsWith('=') ? 1 : 0);
+  return Math.floor(len * 3 / 4);
+}
+function isMaybeBase64(s){ return /^[A-Za-z0-9+/=\s]+$/.test(String(s||'')); }
+function sanitizeBase64(s){ return String(s||'').replace(/\s+/g,''); }
+function resolveAvatar(pic){
+  if(!pic) return DEFAULT_AVATAR;
+  const p = String(pic).trim();
+  if (p.startsWith('data:image/')) { if (approxBase64Bytes(p) > 200*1024) return DEFAULT_AVATAR; return p; }
+  if (p.startsWith('http://')||p.startsWith('https://')||p.startsWith('/')) return p;
+  if (isMaybeBase64(p)) {
+    const data = 'data:image/jpeg;base64,'+sanitizeBase64(p);
+    if (approxBase64Bytes(data) > 200*1024) return DEFAULT_AVATAR;
+    return data;
+  }
+  return '/images/'+p;
+}
+function acceptHeaders(extra={}){ return { 'Accept':'application/json', ...extra }; }
+
+/* ============================ floating alerts (toast) ============================ */
+function showAlert(type, text) {
+  const box = $('alertBox'); if (!box) return;
+  box.className =
+    'fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-opacity duration-500 opacity-100 ' +
+    (type === 'ok'
+      ? 'bg-green-50 border border-green-200 text-green-700'
+      : 'bg-red-50 border border-red-200 text-red-700');
+  box.textContent = text;
+  box.classList.remove('hidden'); box.style.opacity = '1';
+  clearTimeout(box._t);
+  box._t = setTimeout(() => { box.style.opacity = '0'; setTimeout(() => box.classList.add('hidden'), 500); }, 4000);
+}
+
+const payload = parseJwt(jwt);
+if(payload.exp && Date.now() >= payload.exp*1000){
+  localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(CACHE_KEY); location.replace('/login'); return;
+}
+
+/* ============================ FIGURES: state + helpers ============================ */
+window.__allFigures = [];      // [{id, dataUrl, name, from, w, h}]
+window.__selectedFigures = []; // subset chosen by user
+
+function ensureAtLeastOnePerSelectedFigure(blocks){
+  const figs = window.__selectedFigures || [];
+  if (!figs.length) return blocks;
+
+  // which figure numbers are already referenced?
+  const used = new Set();
+  const figTokenRe = /\[\[FIG:(\d+)\]\]/g;
+
+  for (const b of blocks){
+    if (b.format === 'Matching Type') continue;
+    for (const it of b.items){
+      let m; while ((m = figTokenRe.exec(String(it)))) used.add(Number(m[1]));
+    }
+  }
+
+  // for each selected figure not yet referenced, stick it in front of
+  // the first item we can find that has no [[FIG:n]] token yet
+  for (let n = 1; n <= figs.length; n++){
+    if (used.has(n)) continue;
+
+    let placed = false;
+    for (const b of blocks){
+      if (placed || b.format === 'Matching Type') continue;
+      for (let i = 0; i < b.items.length; i++){
+        if (!/\[\[FIG:\d+\]\]/.test(b.items[i])){  // no figure yet
+          b.items[i] = `[[FIG:${n}]] ` + b.items[i];
+          used.add(n);
+          placed = true;
+          break;
+        }
+      }
+    }
+  }
+  return blocks;
+}
+
+async function blobToDataURL(blob){
+  return await new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob);
+  });
+}
+async function extractImagesFromDOCX(file){
+  const ab = await (new Response(file)).arrayBuffer();
+  const zip = await JSZip.loadAsync(ab);
+  const mediaPaths = Object.keys(zip.files).filter(p => /^word\/media\//i.test(p));
+  const out = []; let idx=0;
+  for (const p of mediaPaths){
+    const blob = await zip.files[p].async('blob');
+    out.push({ id:`docx-${idx++}`, dataUrl: await blobToDataURL(blob), name:p.split('/').pop(), from:'docx' });
+  }
+  return out;
+}
+async function extractImagesFromPPTX(file){
+  const ab = await (new Response(file)).arrayBuffer();
+  const zip = await JSZip.loadAsync(ab);
+  const mediaPaths = Object.keys(zip.files).filter(p => /^ppt\/media\//i.test(p));
+  const out = []; let idx=0;
+  for (const p of mediaPaths){
+    const blob = await zip.files[p].async('blob');
+    out.push({ id:`pptx-${idx++}`, dataUrl: await blobToDataURL(blob), name:p.split('/').pop(), from:'pptx' });
+  }
+  return out;
+}
+async function extractPageSnapshotsFromPDF(file, maxPages=20, scale=0.9){
+  const ab = await (new Response(file)).arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+  const out = []; const pages = Math.min(pdf.numPages, maxPages);
+  for (let p=1; p<=pages; p++){
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+    out.push({ id:`pdfpage-${p}`, dataUrl: canvas.toDataURL('image/png'), name:`page-${p}.png`, from:'pdf', w:canvas.width, h:canvas.height });
+  }
+  return out;
+}
+async function extractFigures(file){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  try{
+    if (ext==='docx')  return await extractImagesFromDOCX(file);
+    if (ext==='pptx')  return await extractImagesFromPPTX(file);
+    if (ext==='pdf')   return await extractPageSnapshotsFromPDF(file);
+  }catch(e){ console.warn('figure extraction error:', e); }
+  return [];
+}
+function renderFigureGallery(figs){
+  const panel = $('figurePanel');
+  const grid  = $('figureGrid');
+  const none  = $('noFiguresHint');
+  if (!panel || !grid) return;
+
+  grid.innerHTML = '';
+  if (!figs.length){
+    panel.classList.add('hidden'); none?.classList.remove('hidden'); return;
+  }
+  none?.classList.add('hidden'); panel.classList.remove('hidden');
+
+  figs.forEach(f=>{
+    const card = document.createElement('div');
+    card.className = "fig-card";
+    card.innerHTML = `
+      <label class="flex items-start gap-2">
+        <input type="checkbox" class="mt-1 fig-check" data-id="${f.id}">
+        <img src="${f.dataUrl}" alt="figure" />
+      </label>
+      <input class="mt-2 w-full border rounded px-2 py-1 text-sm fig-caption" data-id="${f.id}" placeholder="Caption (optional)" />
+      <div class="mt-1 text-[11px] text-gray-500">${f.name || ''}</div>`;
+    grid.appendChild(card);
+  });
+
+  grid.onchange = (e)=>{
+    if (!(e.target.classList.contains('fig-check') || e.target.classList.contains('fig-caption'))) return;
+    const checks = grid.querySelectorAll('.fig-check');
+    const caps   = grid.querySelectorAll('.fig-caption');
+    const capMap = {}; caps.forEach(c => { capMap[c.dataset.id] = c.value.trim(); });
+    window.__selectedFigures = Array.from(checks)
+      .filter(c => c.checked)
+      .map(c => {
+        const id = c.dataset.id;
+        const fig = figs.find(x=>x.id===id);
+        return { ...fig, caption: capMap[id] || '' };
+      });
+  };
+}
+
+/* ================== [[FIG:n]] inline injection ================== */
+function getFigByIndex(n){ const arr = window.__selectedFigures || []; return arr[n-1] || null; }
+function renderFigTag(fig, label){
+  if (!fig) return '';
+  return `<img src="${fig.dataUrl}" alt="Figure ${label}" style="max-height:120px;vertical-align:middle;margin:0 6px;border:1px solid #ddd;border-radius:4px">`;
+}
+function sanitizeInline(html){
+  if (window.DOMPurify) {
+    return DOMPurify.sanitize(html, {ALLOWED_TAGS:['b','strong','i','em','u','sub','sup','span','br','div','img'], ADD_ATTR:['style','src','alt']});
+  }
+  return html;
+}
+function injectInlineFiguresIntoHtml(html){
+  return sanitizeInline(String(html).replace(/\[\[FIG:(\d+)\]\]/g, (_, num) => {
+    const idx = Number(num);
+    const fig = getFigByIndex(idx);
+    return renderFigTag(fig, idx) || '';
+  }));
+}
+function stripFigTokens(text){
+  return String(text).replace(/\s*\[\[FIG:\d+\]\]\s*/g,' ').replace(/\s{2,}/g,' ').trim();
+}
+
+/* ============================ DOM ready ============================ */
+document.addEventListener('DOMContentLoaded', () => {
+  const u = payload.user || payload.data || payload; const cache=readCache();
+  const name = u.name || u.username || u.email || cache.name || 'User';
+  const pic  = u.profile_picture || u.picture || u.avatar || cache.profile_picture;
+  $('displayName').textContent = name;
+  const img = $('profilePic'); if(img){ img.src = resolveAvatar(pic); img.onerror = () => { img.src = DEFAULT_AVATAR; }; }
+
+  const dropZone=$('dropZone'), file=$('material'), info=$('fileInfo'), fileName=$('fileName');
+  function showFileInfo(f){ if(fileName && info){ fileName.textContent=`Selected: ${f.name} (${(f.size/1024/1024).toFixed(2)} MB)`; info.classList.remove('hidden'); } }
+  dropZone?.addEventListener('dragover',(e)=>{ e.preventDefault(); dropZone.classList.add('border-blue-400','bg-blue-50'); });
+  dropZone?.addEventListener('dragleave',(e)=>{ e.preventDefault(); dropZone.classList.remove('border-blue-400','bg-blue-50'); });
+  dropZone?.addEventListener('drop',async (e)=>{ e.preventDefault(); dropZone.classList.remove('border-blue-400','bg-blue-50'); if(e.dataTransfer.files.length){ file.files=e.dataTransfer.files; showFileInfo(file.files[0]); await autoScanFigures(file.files[0]); }});
+  file?.addEventListener('change', async (e)=>{ if(e.target.files.length){ const f=e.target.files[0]; showFileInfo(f); await autoScanFigures(f); }});
+
+  $('logoutBtn')?.addEventListener('click', ()=>{ localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(CACHE_KEY); location.replace('/login'); });
+  $('btnGenerate')?.addEventListener('click', generateExamFlow);
+  $('btnSaveDbTop')?.addEventListener('click', saveExamToDB);
+
+  $('scanFigsBtn')?.addEventListener('click', async () => {
+    const f = $('material')?.files?.[0];
+    if (!f) return showAlert('err','Pick a file first.');
+    try {
+      const figs = await extractFigures(f);
+      window.__allFigures = figs;
+      window.__selectedFigures = [];
+      renderFigureGallery(figs);
+      if (!figs.length) showAlert('ok','No figures detected. That’s okay — you can still generate the exam.');
+    } catch (e) {
+      console.warn(e);
+      showAlert('err','Could not scan figures from this file.');
+    }
+  });
+
+  $('output')?.addEventListener('input', () => setSaveEnabled(hasEditorContent()));
+  setSaveEnabled(false);
+  $('btnSaveDbTop')?.classList.add('hidden');
+
+  const qc = $('questionCount');
+  qc?.addEventListener('input', () => {
+    let v = Number(qc.value || 0); if (Number.isNaN(v)) v = 1;
+    if (v > 100) { qc.value = 100; showAlert('err', 'Maximum is 100 questions.'); }
+    else if (v < 1) { qc.value = 1; }
+  });
+});
+
+async function autoScanFigures(f){
+  try {
+    $('noFiguresHint')?.classList.add('hidden');
+    const figs = await extractFigures(f);
+    window.__allFigures = figs;
+    window.__selectedFigures = [];
+    renderFigureGallery(figs);
+    if (!figs.length) $('noFiguresHint')?.classList.remove('hidden');
+  } catch (err) {
+    console.warn('figure scan failed:', err);
+    $('noFiguresHint')?.classList.remove('hidden');
+  }
+}
+
+/* ================== GLOBAL RATE LIMITER ================== */
+const LIMITS = { rpm: 1, tpm: 60000, windowMs: 60000 };
+function approxTokens(str){ const n=(str||'').length; return Math.max(1, Math.ceil(n/4)); }
+
+class GlobalScheduler {
+  constructor(){
+    this.q = []; this.state = { windowStart: Date.now(), reqs: 0, toks: 0, cooldownUntil: 0 };
+    this.timer = setInterval(()=>this._tick(), 250);
+  }
+  _resetWindow(){ const now=Date.now();
+    if (now - this.state.windowStart >= LIMITS.windowMs){
+      this.state.windowStart = now; this.state.reqs = 0; this.state.toks = 0;
+    }}
+  _tick(){
+    this._resetWindow(); const s=this.state; const now=Date.now();
+    if (now < s.cooldownUntil) return; if (!this.q.length) return;
+    const job=this.q[0]; const nextReqs=s.reqs+1, nextToks=s.toks+job.tokenCost;
+    if (nextReqs > LIMITS.rpm || nextToks > LIMITS.tpm) return;
+    this.q.shift(); s.reqs = nextReqs; s.toks = nextToks; job.run();
+  }
+  backoff(ms){ const until = Date.now() + Math.max(2000, ms|0); this.state.cooldownUntil = Math.max(this.state.cooldownUntil, until); }
+  enqueue(tokenCost, fn){
+    return new Promise((resolve, reject) => {
+      const job = { tokenCost: Math.max(1, tokenCost|0),
+        run: async () => { try{ await new Promise(r=>setTimeout(r, 200)); const out = await fn(); resolve(out); }catch(e){ reject(e); } }
+      };
+      this.q.push(job);
+    });
+  }
+}
+const globalScheduler = new GlobalScheduler();
+
+async function scheduledJsonFetch({url, init, promptTextForToks, maxRetries=12}){
+  const tokenCost = approxTokens(promptTextForToks || '') + approxTokens(init?.body || '');
+  let attempt = 0;
+  return globalScheduler.enqueue(tokenCost, async () => {
+    while (true){
+      attempt++;
+      let res, text;
+      try{ res = await fetch(url, init); text = await res.text(); }
+      catch(netErr){
+        if (attempt >= maxRetries) throw netErr;
+        const base = 1500 * Math.pow(2, attempt - 1);
+        const jitter = base * (0.7 + Math.random()*0.6);
+        await new Promise(r => setTimeout(r, jitter));
+        continue;
+      }
+      let data=null; try{ data=JSON.parse(text); }catch{}
+      const okWithContent = (res.ok && data && !data.error && (data.choices?.[0]?.message?.content ?? '') !== '');
+      if (okWithContent) return data;
+
+      const status = res.status;
+      const serverMsg = data?.error?.message || data?.message || text || `HTTP ${status}`;
+      const ra = res.headers.get('retry-after');
+      let retryMs = 0;
+      if (ra){
+        const secs = Number(ra);
+        if (!Number.isNaN(secs)) retryMs = secs * 1000;
+        else { const when = Date.parse(ra); if (!Number.isNaN(when)) retryMs = Math.max(0, when - Date.now()); }
+      }
+
+      const emptyChoices = res.ok && (!data?.choices || !data?.choices?.length || !(data.choices[0]?.message?.content||'').trim());
+      const retriable = (status === 429 || status >= 500 || emptyChoices);
+      if (!retriable || attempt >= maxRetries){ throw new Error(serverMsg || 'Request failed'); }
+      if (status === 429){ globalScheduler.backoff(Math.max(retryMs, 12000)); }
+
+      const base = (status===429 ? 1800 : 1400) * Math.pow(2, attempt - 1);
+      const jitter = base * (0.7 + Math.random()*0.6);
+      await new Promise(r => setTimeout(r, Math.max(retryMs || 0, Math.min(60000, jitter))));
+    }
+  });
+}
+
+/* ================== decode / normalize / parse ================== */
+function decodeEntities(str=''){
+  const map = { '&amp;':'&', '&lt;':'<', '&gt;':'>', '&quot;':'"', '&#39;':"'", '&nbsp;':' ' };
+  return String(str).replace(/(&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;)/g, m=>map[m]);
+}
+function stripModelNoise(s=''){ return s.replace(/```+/g,'').replace(/^\s*"""+/gm,'').replace(/^\s*---+\s*$/gm,''); }
+function standardizeTerms(s=''){ return s.replace(/\badvance\b/gi, 'inventive step (non-obviousness)'); }
+
+function isValidMatchingBlock(txt){
+  const lines = txt.split(/\r?\n/).map(l=>l.trimEnd());
+  const aIdx = lines.findIndex(l=>/^Column A$/i.test(l));
+  const bIdx = lines.findIndex(l=>/^Column B$/i.test(l));
+  if (aIdx < 0 || bIdx < 0 || bIdx <= aIdx) return false;
+  const A = lines.slice(aIdx+1, bIdx).filter(Boolean);
+  const B = lines.slice(bIdx+1).filter(Boolean);
+  const aCount = A.filter(l=>/^\d+\.\s+/.test(l)).length;
+  const bCount = B.filter(l=>/^[a-z]\.\s+/i.test(l)).length;
+  return aCount >= 2 && aCount <= 10 && aCount === bCount;
+}
+function trimMatchingBlockPairs(blockText, keepPairs){
+  if (keepPairs <= 0) return '';
+  const lines = blockText.split(/\r?\n/);
+  const aIdx = lines.findIndex(l => /^Column A$/i.test(l));
+  const bIdx = lines.findIndex(l => /^Column B$/i.test(l));
+  if (aIdx < 0 || bIdx < 0 || bIdx <= aIdx) return blockText;
+  const beforeA = lines.slice(0, aIdx + 1);
+  const betweenAB = lines.slice(aIdx + 1, bIdx);
+  const afterB = lines.slice(bIdx + 1);
+  const Aitems = betweenAB.filter(l => /^\d+\.\s+/.test(l)).slice(0, keepPairs);
+  const Bitems = afterB.filter(l => /^[a-z]\.\s+/i.test(l)).slice(0, keepPairs);
+  return [
+    ...beforeA, ...Aitems, '', 'Column B', ...Bitems
+  ].join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function normalizeMatchingBlock(txt){
+  let s = txt.replace(/\r/g,'');
+  if (/^Column A$/i.test(s.trim().split('\n')[0]||'')) s = 'Instruction: Match the items.\n' + s;
+  s = s.replace(/^\s*Instruction\s*:/i,'Instruction:');
+  s = s.replace(/^\s*[abcde]\.\s*(\d\.)/gmi,'$1');
+  s = s.replace(/\n\s*\n\s*Column B/i, '\n\nColumn B');
+  s = s.replace(/^\s*([a-e])\s+([^.\n])/gmi,'$1. $2');
+  return s.trim();
+}
+function normalizeTFStem(txt){ return txt.replace(/^\s*True\s*or\s*False:\s*/i,''); }
+function stemHash(txt){
+  return txt.toLowerCase().replace(/^[\s_]*\d+[\.)]\s*/,'').replace(/\s+/g,' ')
+    .replace(/[^\p{L}\p{N}\s]/gu,'').trim();
+}
+
+/* ================== Matching JSON helpers ================== */
+function createMatchingBlockFromJson(obj){
+  const instr = (obj.instruction || 'Match the items.').trim();
+  const A = Array.isArray(obj.left) ? obj.left.slice(0,5) : [];
+  const B = Array.isArray(obj.right) ? obj.right.slice(0,5) : [];
+  if (A.length < 5 || B.length < 5) return null;
+  const letters = ['a','b','c','d','e'];
+  const lines = [];
+  lines.push(`Instruction: ${instr}`);
+  lines.push(`Column A`);
+  for (let i=0;i<5;i++) lines.push(`${i+1}. ${String(A[i]).trim()}`);
+  lines.push('');
+  lines.push(`Column B`);
+  lines.push('');
+  for (let i=0;i<5;i++) lines.push(`${letters[i]}. ${String(B[i]).trim()}`);
+  return lines.join('\n');
+}
+function _safeJsonParse(s){ try{ return JSON.parse(s); }catch{ return null; } }
+function extractFirstJson(text){
+  const direct = _safeJsonParse(String(text).trim());
+  if (direct) return direct;
+  const m = String(text).match(/(\{[\s\S]*\}|[\s\S]*)/);
+  if (m) return _safeJsonParse(m[1]);
+  return null;
+}
+
+/* ================== editor helpers / exports ================== */
+window.execCmd = (cmd,val=null)=> document.execCommand(cmd,false,val);
+window.copyEditor = ()=>{ const el=$('output'); if(!el) return;
+  const sel=window.getSelection(); const r=document.createRange();
+  r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r); document.execCommand('copy'); sel.removeAllRanges();
+  showAlert('ok','Copied to clipboard'); };
+window.toggleHeading = (tag)=>{ const sel=window.getSelection(); if(!sel.rangeCount) return;
+  const range=sel.getRangeAt(0); let node=range.startContainer; if(node.nodeType===3) node=node.parentNode;
+  while(node && node!==document && !/^H[1-6]$/.test(node.tagName)) node=node.parentNode;
+  if(node && node.tagName===tag){
+    const span=document.createElement('span'); span.innerHTML=node.innerHTML; node.parentNode.replaceChild(span,node);
+    const r=document.createRange(); r.selectNodeContents(span); r.collapse(true); sel.removeAllRanges(); sel.addRange(r);
+  } else { document.execCommand('formatBlock',false,tag); } };
+window.changeFontSize = (size)=>{ if(!size) return; const sel = window.getSelection(); if(!sel.rangeCount) return;
+  const span=document.createElement('span'); span.style.fontSize=size; span.textContent=sel.toString();
+  const range=sel.getRangeAt(0); range.deleteContents(); range.insertNode(span); };
+
+function getEditorHTML(){ return ($('output')||{}).innerHTML || ''; }
+window.downloadDOCX = ()=>{ const t = ( $('topic').value || 'Exam Paper').toUpperCase();
+  const fname = $('topic').value || 'exam_paper';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;font-size:14pt;line-height:1.6}</style></head><body><div style="text-align:center;font-weight:bold;font-size:16pt;margin:0 0 12pt">${t}</div>${getEditorHTML()}</body></html>`;
+  const blob = window.htmlDocx.asBlob(html); saveAs(blob, fname + ".docx"); };
+function stripUnsupportedFonts(html){ return html.replace(/font-family\s*:\s*[^;"]+;?/gi,''); }
+window.downloadPDF = ()=>{ const title = ( $('topic').value || 'Exam Paper').toUpperCase();
+  const node = $('output').cloneNode(true); node.querySelectorAll('script,style').forEach(el=>el.remove());
+  let html = DOMPurify.sanitize(node.innerHTML, { ADD_ATTR:["style","src","alt"] }); html = stripUnsupportedFonts(html);
+  const content = window.htmlToPdfmake(html, { window });
+  const docDefinition = { info:{title}, pageSize:'A4', pageMargins:[40,60,40,60],
+    content:[ {text:title, style:'header', alignment:'center', margin:[0,0,0,12]}, ...content ],
+    styles:{ header:{fontSize:16,bold:true} }, defaultStyle:{ font:'Roboto', fontSize:12, lineHeight:1.4 } };
+  pdfMake.createPdf(docDefinition).download(title + ".pdf"); };
+
+/* ================== TOS helpers (mobile-friendly) ================== */
+window.addTosRow = () => {
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td data-label="Content Area / Topic" class="px-3 py-2"><input class="w-full border rounded px-2 py-1" placeholder="Topic name" /></td>
+    <td data-label="Weight % (Topic)" class="px-3 py-2"><input type="number" min="0" max="100" step="1" value="25" class="w-full border rounded px-2 py-1" /></td>
+    <td data-label="Remember %" class="px-3 py-2"><input type="number" min="0" max="100" step="1" value="40" class="w-full border rounded px-2 py-1" /></td>
+    <td data-label="Apply/Analyze %" class="px-3 py-2"><input type="number" min="0" max="100" step="1" value="40" class="w-full border rounded px-2 py-1" /></td>
+    <td data-label="HOTS %" class="px-3 py-2"><input type="number" min="0" max="100" step="1" value="20" class="w-full border rounded px-2 py-1" /></td>
+    <td data-label="Row Total" class="px-3 py-2 rowTotal">100%</td>
+    <td data-label="" class="px-3 py-2 actions"><button type="button" onclick="removeTosRow(this)" class="text-red-600 hover:text-red-700"><i class="fas fa-times"></i></button></td>`;
+  document.getElementById('tosBody').appendChild(tr);
+};
+window.removeTosRow = (btn)=> btn.closest('tr').remove();
+
+function readTOS(){
+  const rows = Array.from(document.querySelectorAll('#tosBody tr'));
+  return rows.map(r=>{
+    const [topicEl, wEl, ruEl, aaEl, hotEl] = r.querySelectorAll('input');
+    return { topic:(topicEl.value||'').trim(), topicWeight:Number(wEl.value||0), RU:Number(ruEl.value||0), AA:Number(aaEl.value||0), HOTS:Number(hotEl.value||0), rowEl:r };
+  }).filter(r=>r.topic);
+}
+const tosBodyEl = document.getElementById('tosBody');
+tosBodyEl && tosBodyEl.addEventListener('input',()=>validateTOS());
+window.validateTOS = ()=>{
+  const tos = readTOS(); const status=$('tosStatus'); if(!tos.length){ status.textContent='Add at least one topic.'; status.style.color='crimson'; return false; }
+  const weightSum = tos.reduce((s,t)=>s+t.topicWeight,0); let ok=true;
+  tos.forEach(t=>{ const rowSum=t.RU+t.AA+t.HOTS; const cell=t.rowEl.querySelector('.rowTotal'); cell.textContent=rowSum+'%'; cell.style.color=(rowSum===100)?'#0a0':'crimson'; if(rowSum!==100) ok=false; });
+  const near100 = Math.abs(weightSum-100) <= 1; if(!near100) ok=false;
+  if(ok){ status.textContent=`TOS looks good. Topic weights total ${weightSum}%.`; status.style.color='#0a0'; }
+  else { status.textContent=`Fix TOS: Topic weights = ${weightSum}% (must be ~100), and each row must total 100%.`; status.style.color='crimson'; }
+  return ok;
+};
+
+function apportion(total, percents){
+  const raw=percents.map(p=>(p/100)*total);
+  const floors=raw.map(Math.floor);
+  let used=floors.reduce((s,x)=>s+x,0);
+  const rema=raw.map((x,i)=>({i, r:x-Math.floor(x)})).sort((a,b)=>b.r-a.r);
+  const out=floors.slice(); let k=0;
+  while(used<total && k<rema.length){ out[rema[k].i]++; used++; k++; }
+  return out;
+}
+function allocateItemsByTOS(total){
+  const tos=readTOS();
+  const perTopic=apportion(total, tos.map(t=>t.topicWeight));
+  return tos.map((t,idx)=>{
+    const tt=perTopic[idx];
+    const perLevel=apportion(tt, [t.RU,t.AA,t.HOTS]);
+    return { topic:t.topic, total:tt, RU:perLevel[0], AA:perLevel[1], HOTS:perLevel[2] };
+  });
+}
+function distributeAcrossFormats(total, formats, mustIncludeMatch=false){
+  if(formats.length===1) return {[formats[0]]:total};
+  const pct=Array(formats.length).fill(100/formats.length);
+  const counts=apportion(total,pct);
+  const out={}; formats.forEach((f,i)=>out[f]=counts[i]);
+  if (!mustIncludeMatch || total <= 0 || !formats.includes('Matching Type')) return out;
+  if ((out['Matching Type']|0) === 0){
+    let donor=null, donorCount=-1;
+    for (const f of formats){
+      if (f==='Matching Type') continue;
+      if ((out[f]||0) > donorCount){ donor=f; donorCount=(out[f]||0); }
+    }
+    if (donor && donorCount>0){ out[donor]-=1; out['Matching Type']=1; }
+  }
+  return out;
+}
+
+/* ================== Extraction (local) ================== */
+const readAsArrayBuffer = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsArrayBuffer(f); });
+const readAsText = f => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsText(f); });
+
+async function extractDOCX(file){ const ab=await readAsArrayBuffer(file); const {value}=await window.mammoth.extractRawText({arrayBuffer:ab}); return (value||"").trim(); }
+async function extractXLSX_CSV(file,ext){
+  let wb; if(ext==='csv'){ const text=await readAsText(file); wb=XLSX.read(text,{type:'string'}); }
+  else { const ab=await readAsArrayBuffer(file); wb=XLSX.read(ab,{type:'array'}); }
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{header:1,raw:true});
+  return rows.map(r=>r.map(c=>c==null?"":String(c)).join("\t")).join("\n");
+}
+async function extractPPTX(file){
+  const ab=await readAsArrayBuffer(file); const zip=await JSZip.loadAsync(ab);
+  const slideFiles=Object.keys(zip.files).filter(p=>/^ppt\/slides\/slide\d+\.xml$/.test(p))
+    .sort((a,b)=>parseInt(a.match(/slide(\d+)\.xml/)[1])-parseInt(b.match(/slide(\d+)\.xml/)[1]));
+  let out=[];
+  for(let i=0;i<slideFiles.length;i++){
+    const xml=await zip.files[slideFiles[i]].async('text');
+    const runs=Array.from(xml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)).map(m=>m[1]);
+    const text=runs.map(t=>t.replace(/&lt;|&gt;|&amp;/g,s=>({'&lt;':'<','&gt;':'>','&amp;':'&'}[s]))).map(s=>s.trim()).filter(Boolean);
+    if(text.length) out.push(`Slide ${i+1}:\n- `+text.join("\n- "));
+  }
+  return out.join("\n\n") || "(No extractable text)";
+}
+async function extractPDF(file){
+  const ab=await readAsArrayBuffer(file);
+  const pdf=await pdfjsLib.getDocument({data:ab}).promise; let pages=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p); const content=await page.getTextContent();
+    const strings=content.items.map(it=>(it.str||"").trim()).filter(Boolean);
+    const text=strings.join(" ").replace(/\s{2,}/g," ").trim();
+    if(text) pages.push(`Page ${p}:\n${text}`);
+  }
+  return pages.join("\n\n") || "(No extractable text)";
+}
+async function extractHTML(file){ const html=await readAsText(file); const doc=new DOMParser().parseFromString(html,"text/html"); return (doc.body?.innerText||"").trim(); }
+async function extractLocally(file){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  if(ext==='docx') return extractDOCX(file);
+  if(ext==='xlsx'||ext==='csv') return extractXLSX_CSV(file,ext);
+  if(ext==='pptx') return extractPPTX(file);
+  if(ext==='pdf') return extractPDF(file);
+  if(ext==='html'||ext==='htm') return extractHTML(file);
+  if(ext==='txt') return readAsText(file);
+  throw new Error("Unsupported file type: ."+ext);
+}
+
+/* ================== AI calls / rendering ================== */
+const apikey = "Bearer exam-miner";
+
+function setLoader(main, sub){
+  $('loaderMain').textContent=main; $('loaderSub').textContent=sub||'';
+  $('loaderBox').classList.remove('hidden'); $('editorBox').classList.add('hidden');
+}
+function hideLoader(){ $('loaderBox').classList.add('hidden'); }
+function showEditor(){ $('editorBox').classList.remove('hidden'); }
+function setProgress(pct, text){
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  $('progressBar').style.width = p + '%';
+  $('progressText').textContent = (text ? text + ' — ' : '') + p + '%';
+}
+
+async function callModelStrict(prompt, model){
+  const payload = { model, messages:[
+    {role:"system", content:"You generate exam items only, following instructions exactly."},
+    {role:"user", content:prompt}
+  ]};
+  const data = await scheduledJsonFetch({
+    url: "https://exam-miner.com/api/v1/chat/completions.php",
+    init: {
+      method:"POST",
+      headers:{ "Content-Type":"application/json", "Authorization":apikey, "HTTP-Referer":"https://exam-miner.site", "X-Title":"Exam Miner 2.0" },
+      body: JSON.stringify(payload)
+    },
+    promptTextForToks: prompt
+  });
+  return data.choices?.[0]?.message?.content || "";
+}
+
+function buildFormatTotals(plan, selectedFormats){
+  const totals = Object.fromEntries(selectedFormats.map(f => [f, 0]));
+  const mustIncludeMatch = true;
+  for(const row of plan){
+    const Ls=[ {k:'RU', c:row.RU}, {k:'AA', c:row.AA}, {k:'HOTS', c:row.HOTS} ];
+    for(const L of Ls){
+      if(L.c<=0) continue;
+      const per = distributeAcrossFormats(L.c, selectedFormats, mustIncludeMatch);
+      for(const [fmt,cnt] of Object.entries(per)){ totals[fmt] = (totals[fmt]||0) + (cnt||0); }
+    }
+  }
+  if (selectedFormats.includes('Matching Type') && (totals['Matching Type']||0) === 0){
+    let donor = null, max = -1;
+    for (const f of selectedFormats){
+      if (f==='Matching Type') continue;
+      if ((totals[f]||0) > max){ donor = f; max = totals[f]||0; }
+    }
+    if (donor && max>0){ totals[donor]--; totals['Matching Type']=1; }
+  }
+  return totals;
+}
+
+/* ===== FIG token aware prompt ===== */
+function buildFormatTask(format, count, meta, difficulty, tosPlan, setIndex, banList, figPlan){
+  const diffHint = difficulty==='easy' ? 'Use simpler vocabulary and direct recall where appropriate.'
+                : difficulty==='hard' ? 'Favor scenario-based prompts and higher-order wording.'
+                : 'Use clear, natural wording with moderate complexity.';
+
+  let fmtGuidance;
+  if (format === "Matching Type") {
+    const blocks = Math.ceil(count / 5);
+    fmtGuidance =
+      `Matching Type.\nReturn ONLY a JSON array of ${blocks} objects (no markdown).\nEach object:\n{\n` +
+      `  "instruction": "short instruction",\n` +
+      `  "left":  ["term 1","term 2","term 3","term 4","term 5"],\n` +
+      `  "right": ["definition a","definition b","definition c","definition d","definition e"]\n}\n` +
+      `Strings only. Exactly 5 pairs/object.`;
+  } else {
+    fmtGuidance =
+      format==="Multiple Choice" ? "Multiple Choice with choices A–D. Each item lines: stem then A., B., C., D."
+      : format==="True or False" ? "True or False. Output only numbered statements, each starting with underscore (e.g., '_ 1. ...')."
+      : format==="Identification" ? "Identification. Short prompts expecting a term/phrase; add a short blank line."
+      : format==="Essay" ? "Essay prompts. 1–3 sentences; include long blank lines."
+      : (format + ".");
+  }
+
+  const tosSummary = tosPlan.map(p => `- ${p.topic}: total ${p.total} (RU ${p.RU}, AA ${p.AA}, HOTS ${p.HOTS})`).join('\n');
+  const avoidBlock = banList?.length ? `\nAvoid reusing these stems/phrases:\n${banList.slice(0,120).join('\n')}\n` : '';
+  const figureBlock = (figPlan && figPlan.captions?.length)
+    ? `\nFIGURES available. When a figure aids the item, insert token [[FIG:n]] INSIDE THE STEM exactly where it belongs (n=1..${figPlan.captions.length}). You MAY also use [[FIG:n]] as a CHOICE if relevant (e.g., “Which diagram shows…?”).\n` +
+      figPlan.captions.map((c,i)=>`Figure ${i+1}: ${c}`).join('\n') + '\n'
+    : '';
+
+  const prompt = `
+Create a UNIQUE Set ${setIndex} of exactly ${count} ${format} items for:
+Subject: ${meta.subject || "(unspecified)"} | Topic: ${meta.topic || "(unspecified)"} | Grade: ${meta.grade || "(unspecified)"}
+
+STRICT:
+- Output ONLY the ${format} items, numbered 1..${count}, plain text.
+- ${fmtGuidance}
+- If you use a figure, you MUST insert [[FIG:n]] (n from the list provided) in the STEM (or as a CHOICE if relevant).
+- NO explanations. NO Answer Key in this step.
+- Follow the topical proportions implicitly (do not print them):
+${tosSummary}
+${avoidBlock}
+${figureBlock}
+Style: ${diffHint}
+
+Learning Material (+ figure descriptors embedded at the end):
+"""${meta.content}"""`.trim();
+
+  return { format, count, prompt };
+}
+
+/* ================== parse + render (FIG token aware) ================== */
+function extractQuestions(block){
+  const lines = block.split(/\r?\n/);
+  const q = [], answerLines = [];
+  let inKey = false, inMatch = false;
+
+  for (let raw of lines){
+    const t = (raw || '').replace(/\s+$/,'');
+    if (!t.trim()){ if(inMatch && q.length) q[q.length-1]+="\n"; continue; }
+
+    if (/^answer\s*key[:\s]?$/i.test(t.trim())){ inKey=true; inMatch=false; continue; }
+    if (inKey){ answerLines.push(t); continue; }
+
+    if (/^Instruction:\s*/i.test(t) || /^Column A$/i.test(t)){
+      if (/^Column A$/i.test(t)) q.push('Instruction: Match the items.');
+      else q.push(t);
+      inMatch = true; continue;
+    }
+    if (inMatch){
+      if (/^Instruction:\s*/i.test(t)){ q.push(t); }
+      else { q[q.length-1] += "\n" + t; }
+      continue;
+    }
+
+    if (/^_*\s*\d+[\.\)]\s+/.test(t.trim())) q.push(t.trim());
+    else if (q.length) q[q.length-1] += "\n" + t;
+  }
+  return { items:q, answerKeyText:answerLines.join("\n") };
+}
+function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.random()* (i+1) | 0; [arr[i],arr[j]]=[arr[j]],0; } }
+
+function renderMCQItem(txt, idx){
+  let body = String(txt).replace(/^\s*\d+[\.)]\s*/,'').trim();
+
+  // split stem from choices (first " A. ")
+  const choiceMatch = body.match(/\s+A\.\s+/);
+  let stemPart, rest;
+  if (choiceMatch) { stemPart = body.slice(0, choiceMatch.index); rest = body.slice(choiceMatch.index); }
+  else { stemPart = body; rest = ''; }
+
+  const stemWith = injectInlineFiguresIntoHtml(stemPart);
+
+  const m = rest.match(/^(?:\s*A\.\s*)(.*?)(?:\s+B\.\s*)(.*?)(?:\s+C\.\s*)(.*?)(?:\s+D\.\s*)(.*)$/s);
+  if(!m){ return `<div style="margin:6px 0 2px 0;"><b>${idx}.</b> ${stemWith}</div>`; }
+  const [, Araw, Braw, Craw, Draw] = m;
+
+  const inJ = s => injectInlineFiguresIntoHtml(String(s)).trim() || '&nbsp;';
+  const A = inJ(Araw), B = inJ(Braw), C = inJ(Craw), D = inJ(Draw);
+
+  return [
+    `<div style="margin:6px 0 2px 0;"><b>${idx}.</b> ${stemWith}</div>`,
+    `<div style="margin-left:22px">A. ${A}</div>`,
+    `<div style="margin-left:22px">B. ${B}</div>`,
+    `<div style="margin-left:22px">C. ${C}</div>`,
+    `<div style="margin-left:22px">D. ${D}</div>`
+  ].join('\n');
+}
+function renderMatchingBlock(text){
+  const content = injectInlineFiguresIntoHtml(escapeHtml(text));
+  return `<pre style="white-space:pre-wrap; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; line-height:1.5; margin:6px 0 10px 0;">${content}</pre>`;
+}
+function renderExamFromBlocks(blocks, meta, selectedFormats=null, doShuffle=false, setIndex=1){
+  const title=`${meta.topic || meta.subject || "Exam"}`.trim();
+  const lines=[];
+  lines.push(`<div style="text-align:center;font-weight:bold;font-size:18pt;margin-bottom:10pt">${escapeHtml(title)} — SET ${setIndex}</div>`);
+
+  const byTopic={}; const topic = meta.topic || meta.subject || 'General'; byTopic[topic] = {};
+  for(const b of blocks){ byTopic[topic][b.format] ||= []; byTopic[topic][b.format].push(...b.items); }
+
+  for(const [t, map] of Object.entries(byTopic)){
+    lines.push(`<div style="font-weight:bold;margin-top:10pt">${escapeHtml(String(t).toUpperCase())}</div>`);
+    const order = selectedFormats?.length ? selectedFormats : Object.keys(map);
+    for(const fmt of order){
+      const items = (map[fmt]||[]).slice(); if(!items.length) continue;
+      if(doShuffle && fmt!=="Matching Type") shuffleInPlace(items);
+      lines.push(`<div style="font-weight:bold;margin:8px 0 4px 0">${escapeHtml(fmt)}</div>`);
+      if (fmt === "Matching Type"){
+        items.forEach((txt, i) => {
+          const norm = normalizeMatchingBlock(txt);
+          lines.push(renderMatchingBlock(norm));
+          if (i < items.length - 1) lines.push(`<div style="text-align:center; opacity:.35; margin:4px 0;">────</div>`);
+        });
+      } else if (fmt === "Multiple Choice"){
+        items.forEach((txt,i)=>{ lines.push(renderMCQItem(txt, i+1)); });
+      } else {
+        items.forEach((txt,i)=>{
+          let body = txt.replace(/^\s*_?\s*\d+[\.)]\s*/,"");
+          if (fmt==="True or False") body = normalizeTFStem(body);
+          const html = injectInlineFiguresIntoHtml(body);
+          const line = (fmt==="True or False" ? `_ ${i+1}. ${html}` : `${i+1}. ${html}`);
+          lines.push(`<div style="margin:2px 0;">${line}</div>`);
+        });
+      }
+      lines.push(`<div style="height:8px"></div>`);
+    }
+    lines.push(`<div style="height:12px"></div>`);
+  }
+  return lines.join("\n");
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+/* ===== Summarize (large docs) ===== */
+async function summarizeContent(text){
+  const model=$('model').value;
+  const payload = { model, messages:[
+    { role:"system", content:"Summarize this learning material to the most important topics, keywords, concepts, and definitions."},
+    { role:"user", content:text }
+  ]};
+  const data = await scheduledJsonFetch({
+    url: "https://exam-miner.com/api/v1/chat/completions.php",
+    init: { method:"POST", headers:{ "Content-Type":"application/json","Authorization":apikey,"HTTP-Referer":"https://ivnx9.github.io","X-Title":"Exam Miner 2.0"}, body: JSON.stringify(payload) },
+    promptTextForToks: text
+  });
+  if(data.error) throw new Error(data.error.message||'Model error');
+  return data.choices?.[0]?.message?.content || null;
+}
+
+function hasEditorContent(){ const html = ($('output')?.innerHTML || '').trim(); return html.length > 0; }
+function setSaveEnabled(on){
+  const b = document.getElementById('btnSaveDbTop'); if(!b) return;
+  if(on){ b.classList.remove('hidden'); b.disabled=false; b.removeAttribute('aria-disabled'); b.removeAttribute('title'); }
+  else { b.disabled=true; b.setAttribute('aria-disabled','true'); b.setAttribute('title','Nothing to save yet'); }
+}
+
+/* ================== NEW: per-set fresh generation ================== */
+async function generateBlocksForSet({meta, selectedFormats, plan, difficulty, model, setIndex, banList, figPlan}){
+  const totalsByFormat = buildFormatTotals(plan, selectedFormats);
+  const formatTasks = Object.entries(totalsByFormat)
+    .filter(([,cnt]) => cnt > 0)
+    .map(([fmt, cnt]) => buildFormatTask(fmt, cnt, meta, difficulty, plan, setIndex, banList, figPlan));
+
+  const blocks = [];
+  for (const t of formatTasks){
+    let data = await callModelStrict(t.prompt, model);
+    let raw = standardizeTerms(stripModelNoise(decodeEntities(data)));
+    let keep = [];
+
+    if (t.format === 'Matching Type'){
+      const parsed = extractFirstJson(raw);
+      if (Array.isArray(parsed)){
+        for (const obj of parsed){
+          const block = createMatchingBlockFromJson(obj || {});
+          if (block) keep.push(block);
+          if (keep.length === t.count) break;
+        }
+      } else if (parsed && typeof parsed === 'object'){
+        const block = createMatchingBlockFromJson(parsed);
+        if (block) keep.push(block);
+      }
+      if (keep.length < t.count){
+        let fb = extractQuestions(raw).items;
+        fb = fb.map(normalizeMatchingBlock).filter(isValidMatchingBlock);
+        for (const it of fb){ if (keep.length === t.count) break; keep.push(it); }
+      }
+      if (keep.length < t.count){
+        const missing = t.count - keep.length;
+        const follow = `
+Return ONLY a JSON array of ${missing} objects, each like:
+{
+  "instruction": "short instruction",
+  "left":  ["term 1","term 2","term 3","term 4","term 5"],
+  "right": ["definition a","definition b","definition c","definition d","definition e"]
+}`.trim();
+        let more = await callModelStrict(follow, model);
+        more = standardizeTerms(stripModelNoise(decodeEntities(more)));
+        const mp = extractFirstJson(more);
+        if (Array.isArray(mp)){
+          for (const obj of mp){
+            const block = createMatchingBlockFromJson(obj || {});
+            if (block) keep.push(block);
+            if (keep.length === t.count) break;
+          }
+        }
+      }
+      // trim to exact pair count
+      const desired = t.count; let pairsSoFar = 0; const trimmed = [];
+      for (let i = 0; i < keep.length; i++) {
+        const block = keep[i];
+        const aCount = (block.match(/^\d+\.\s+/gmi) || []).length;
+        const bCount = (block.match(/^[a-z]\.\s+/gmi) || []).length;
+        const pairs = Math.min(aCount, bCount);
+        if (pairsSoFar >= desired) break;
+        const room = desired - pairsSoFar;
+        if (pairs <= room) { trimmed.push(block); pairsSoFar += pairs; }
+        else { trimmed.push(trimMatchingBlockPairs(block, room)); pairsSoFar = desired; break; }
+      }
+      keep = trimmed;
+    } else {
+      let items = extractQuestions(raw).items;
+      if (t.format === 'True or False'){
+        items = items.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,'')).map(normalizeTFStem);
+      }
+      const seen = new Set();
+      for (const it of items){
+        const h = stemHash(stripFigTokens(it));
+        if (!seen.has(h)){ seen.add(h); keep.push(it); }
+        if (keep.length === t.count) break;
+      }
+      if (keep.length < t.count){
+        const missing = t.count - keep.length;
+        const follow = `
+You produced ${keep.length}/${t.count} ${t.format} items.
+Generate exactly ${missing} MORE ${t.format} items continuing numbering from ${keep.length+1}.
+Plain text only.`.trim();
+        let more = await callModelStrict(follow, model);
+        more = standardizeTerms(stripModelNoise(decodeEntities(more)));
+        let moreItems = extractQuestions(more).items;
+        if (t.format === 'True or False'){
+          moreItems = moreItems.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,'')).map(normalizeTFStem);
+        }
+        const seen2 = new Set(keep.map(it => stemHash(stripFigTokens(it))));
+        for (const mi of moreItems){
+          const h = stemHash(stripFigTokens(mi));
+          if (!seen2.has(h)){ seen2.add(h); keep.push(mi); }
+          if (keep.length === t.count) break;
+        }
+      }
+    }
+
+    blocks.push({ topic: meta.topic || meta.subject || 'General', format: t.format, items: keep.slice(0, t.count) });
+  }
+
+  // Ensure at least one matching if selected and none produced
+  const needsMatching = selectedFormats.includes('Matching Type') && !blocks.some(b => b.format==='Matching Type' && b.items.length);
+  if (needsMatching){
+    const oneTask = buildFormatTask('Matching Type', 1, meta, difficulty, plan, setIndex, banList, figPlan);
+    const extra = await callModelStrict(oneTask.prompt, model);
+    let items = extractQuestions(standardizeTerms(stripModelNoise(decodeEntities(extra)))).items;
+    items = items.map(normalizeMatchingBlock).filter(isValidMatchingBlock);
+    if (items.length) blocks.push({ topic: meta.topic || meta.subject || 'General', format:'Matching Type', items: [items[0]] });
+  }
+
+  return blocks;
+}
+
+async function generateAnswerKeyFor(html, model){
+  const plain = html.replace(/<[^>]+>/g,' ');
+  return standardizeTerms(stripModelNoise(decodeEntities((await callModelStrict(
+    `Produce ONLY the answer key for the exam below. No notes, no explanations.\n\nExam:\n"""${plain}"""`,
+    model)).trim())));
+}
+
+/* ================== MAIN: fresh sets + per-set keys ================== */
+async function generateExamFlow(){
+  const file=$('material').files?.[0]; if(!file) return showAlert('err','Please upload a learning material file.');
+  const subject=$('subject').value.trim(), topic=$('topic').value.trim(), grade=$('grade').value.trim();
+  const difficulty = $('difficulty').value;
+
+  const rawQ = Number($('questionCount').value);
+  if (rawQ > 100) { showAlert('err','Maximum is 100 questions.'); return; }
+  let total = Math.max(1, Math.min(100, Number.isFinite(rawQ) ? rawQ : 20));
+
+  const selectedFormats=Array.from(document.querySelectorAll('.format:checked')).map(cb=>cb.value);
+  if(!selectedFormats.length) return showAlert('err','Select at least one exam format.');
+  if(!validateTOS()) return showAlert('err','Fix your TOS first.');
+  const numSets = Math.max(1, parseInt($('numSets').value, 10) || 1);
+
+  const plan=allocateItemsByTOS(total);
+  const model=$('model').value;
+
+  try{
+    setLoader('Extracting content…','Reading your file locally.');
+    setProgress(5,'Starting');
+    const extractedText=await extractLocally(file);
+    if(!extractedText || !extractedText.trim()){ hideLoader(); return showAlert('err','No extractable text found in the file.'); }
+    setProgress(15,'Content extracted');
+
+    const NEED_SUMMARY = extractedText.length > 10000;
+    if (NEED_SUMMARY){
+      setLoader('Summarizing content…','Condensing large material for better prompts.');
+      const content = await summarizeContent(extractedText);
+      if(!content){ hideLoader(); return showAlert('err','Summarization failed.'); }
+      window.__genContent = content;
+      setProgress(25,'Summary ready');
+    } else {
+      window.__genContent = extractedText;
+      setProgress(25,'Using full content');
+    }
+
+    const meta={subject, topic: topic || subject, grade, content: window.__genContent};
+    const doShuffle = $('shuffle')?.checked;
+    const includeKey=$('answerKey')?.checked;
+
+    // Figure usage plan (no items-per-figure setting; we just pass captions)
+    const chosen = (window.__selectedFigures || []);
+    const figPlan = chosen.length ? { captions: chosen.map(f => f.caption || f.name || '(no caption)') } : null;
+
+    setLoader('Generating Set 1…','Fresh questions and answers.');
+    const setsHtml = [];
+    const banList = []; // collect stems to discourage reuse across sets
+
+    for (let s=1; s<=numSets; s++){
+      setProgress(25 + Math.round((s-1)*(60/Math.max(1,numSets))), `Generating Set ${s}`);
+      // const blocks = await generateBlocksForSet({meta, selectedFormats, plan, difficulty, model, setIndex:s, banList, figPlan});
+      let blocks = await generateBlocksForSet({meta, selectedFormats, plan, difficulty, model, setIndex:s, banList, figPlan});
+        blocks = ensureAtLeastOnePerSelectedFigure(blocks);
+      const paperHtml = renderExamFromBlocks(blocks, meta, selectedFormats, doShuffle, s);
+
+      // grow the ban list (first line of each item)
+      for (const b of blocks){
+        for (const it of b.items){
+          const line = String(it).split('\n')[0] || it;
+          banList.push(stripFigTokens(line).slice(0,180));
+        }
+      }
+
+      setsHtml.push(paperHtml);
+      if (includeKey){
+        setLoader(`Generating Answer Key — Set ${s}`,'Each set has its own key.');
+        const key = await generateAnswerKeyFor(paperHtml, model);
+        setsHtml.push(`<div style="font-weight:bold; font-size:14pt; margin-top:6pt;">Answer Key — SET ${s}</div>`);
+        setsHtml.push(`<div style="margin-top:8px;">${escapeHtml(key).replace(/\n/g,'<br>')}</div>`);
+      }
+      if (s < numSets) setsHtml.push(`<div class="page-break"></div>`);
+    }
+
+    hideLoader(); showEditor();
+    const finalHtml = DOMPurify.sanitize(setsHtml.join('\n'), { ADD_ATTR: ['style','src','alt'] });
+    $('output').innerHTML = finalHtml;
+    setSaveEnabled(true);
+
+    $('allocNote').textContent = 'Allocation → ' + plan.map(p => `${p.topic}: ${p.total} (RU ${p.RU}, AA ${p.AA}, HOTS ${p.HOTS})`).join(' | ');
+    showAlert('ok','All sets generated — each with its own unique key.');
+    setProgress(100,'Done');
+  }catch(e){
+    hideLoader(); console.error(e); showAlert('err', e?.message || 'Generation failed.');
+  }
+}
+
+/* ================== Save to DB ================== */
+async function saveExamToDB(e){
+  e?.preventDefault?.();
+  const raw = $('output').innerHTML || '';
+  if(!raw.trim()){ return showAlert('err','Nothing to save. Generate or paste questions first.'); }
+  const body_html = DOMPurify.sanitize(raw, { ADD_ATTR: ['style','src','alt'] }).replace(/>\s+</g,'><').replace(/\s{2,}/g,' ').replace(/\n{2,}/g,'\n');
+
+  const approxBytes = new Blob([body_html]).size;
+  if (approxBytes > 900_000){
+    showAlert('err', `Exam content is large (~${(approxBytes/1024/1024).toFixed(2)} MB). If saving fails, reduce items or ask admin to raise post_max_size/client_max_body_size.`);
+  }
+
+  const title = $('topic').value.trim() || 'Generated Exam';
+  const description = $('subject').value ? (`${$('subject').value}${$('grade').value ? ' • ' + $('grade').value : ''}`) : '';
+  const number_of_questions = parseInt($('questionCount').value,10) || 0;
+
+  const formats = Array.from(document.querySelectorAll('.format:checked')).map(cb=>cb.value);
+  const exam_type = formats.length===1 ? (formats[0].toLowerCase().replace(/\s+/g,'_')) : 'mixed';
+  const sets_of_exam = parseInt($('numSets').value,10) || 1;
+
+  const fd = new FormData();
+  fd.append('token', jwt);
+  fd.append('title', title);
+  fd.append('description', description);
+  fd.append('exam_type', exam_type);
+  fd.append('number_of_questions', number_of_questions);
+  fd.append('sets_of_exam', sets_of_exam);
+  fd.append('learning_material', $('material').files?.[0]?.name || '');
+  fd.append('body_html', body_html);
+
+  try{
+    const res = await fetch('/api/exam_save.php', { method:'POST', headers: acceptHeaders(), body: fd });
+    const text = await res.text(); let data; try{ data = JSON.parse(text); }catch{ throw new Error(text); }
+    if ((data && data.exam_id) || data?.status === 'success'){
+      showAlert('ok', data?.message || 'Saved! Opening your exam…');
+      const id = data.exam_id || data.id; if(id) setTimeout(()=> location.href = `/exam/${id}`, 700);
+    } else {
+      showAlert('err', data?.message || 'Failed to save exam.');
+    }
+  }catch(err){
+    console.error(err); showAlert('err','Server error while saving.');
+  }
+}
+window.saveExamToDB = saveExamToDB;
+})();
+</script>
+
+</body>
+</html>
