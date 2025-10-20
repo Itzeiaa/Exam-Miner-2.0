@@ -367,6 +367,68 @@ const $ = id => document.getElementById(id);
 // ['Multiple Choice','Identification','True or False','Essay','Matching Type']
 const FIG_ALLOWED = new Set(['Multiple Choice', 'True or False']);
 
+
+// ======== FIGURE ASSIGNMENT (deterministic) ========
+
+// Build a per-format plan: which item index gets which figure id (and caption).
+function makeFigureAssignment(totalsByFormat, selectedFormats, figPlan) {
+  const plan = {};
+  if (!figPlan || !figPlan.captions?.length) return plan;
+
+  const allowedOrder = selectedFormats.filter(f => FIG_ALLOWED.has(f));
+  if (!allowedOrder.length) return plan;
+
+  const N = figPlan.captions.length;
+  let nextFig = 1; // 1..N
+  let remaining = N;
+
+  for (const fmt of allowedOrder) {
+    const count = totalsByFormat[fmt] || 0;
+    if (!count || remaining <= 0) { plan[fmt] = []; continue; }
+
+    const take = Math.min(count, remaining);
+    const entries = [];
+    // assign to earliest items within this format section: 1..take
+    for (let i = 1; i <= take; i++) {
+      entries.push({ idx: i, n: nextFig, desc: (figPlan.captions[nextFig-1] || '').trim() });
+      nextFig++; if (nextFig > N) nextFig = N + 1; // will stop assigning
+    }
+    plan[fmt] = entries;
+    remaining -= take;
+  }
+
+  // Ensure keys exist for all formats we generate
+  for (const fmt of Object.keys(totalsByFormat)) plan[fmt] ||= [];
+  return plan;
+}
+
+// Enforce a given plan on generated items: inject/replace tokens for assigned items,
+// and remove tokens from non-assigned items.
+function applyFigurePlanToGeneratedItems(items, format, planEntries) {
+  const out = items.slice();
+  const byIdx = new Map();
+  (planEntries || []).forEach(e => byIdx.set(e.idx, e));
+
+  for (let i = 0; i < out.length; i++) {
+    const itemNo = i + 1;           // 1-based position within this format block
+    const assignment = byIdx.get(itemNo);
+    let s = String(out[i]);
+
+    if (assignment) {
+      // Strip any existing tokens first, then inject the required one
+      s = s.replace(/\s*\[\[FIG:\d+\]\]\s*/g, '');
+      s = injectTokenIntoStem(s, `[[FIG:${assignment.n}]]`, format);
+      // precisely one token
+      s = s.replace(/(\[\[FIG:\d+\]\]).*?(\[\[FIG:\d+\]\])/g, '$1');
+      out[i] = s;
+    } else {
+      // This item should NOT have a figure
+      out[i] = stripFigTokens(s);
+    }
+  }
+  return out;
+}
+
 // Helper: safely convert anything to string
 function s(v){ 
   return v == null ? "" : String(v); 
@@ -1112,7 +1174,7 @@ function buildFormatTotals(plan, selectedFormats){
 }
 
 /* ===== FIG token aware prompt ===== */
-function buildFormatTask(format, count, meta, difficulty, tosPlan, setIndex, banList, figPlan){
+function buildFormatTask(format, count, meta, difficulty, tosPlan, setIndex, banList, figPlan, planForFormat){
   const diffHint = difficulty==='easy' ? 'Use simpler vocabulary and direct recall where appropriate.'
                 : difficulty==='hard' ? 'Favor scenario-based prompts and higher-order wording.'
                 : 'Use clear, natural wording with moderate complexity.';
@@ -1137,11 +1199,91 @@ function buildFormatTask(format, count, meta, difficulty, tosPlan, setIndex, ban
 
   const tosSummary = tosPlan.map(p => `- ${p.topic}: total ${p.total} (RU ${p.RU}, AA ${p.AA}, HOTS ${p.HOTS})`).join('\n');
   const avoidBlock = banList?.length ? `\nAvoid reusing these stems/phrases:\n${banList.slice(0,120).join('\n')}\n` : '';
-
+/*
   const figureBlock = (figPlan && figPlan.captions?.length)
     ? `\nFIGURES available. When a figure aids the item, insert token [[FIG:n]] INSIDE THE STEM exactly where it belongs (n=1..${figPlan.captions.length}). You MAY also use [[FIG:n]] as a CHOICE if relevant (e.g., “Which diagram shows…?”). Use at most ${(figPlan.perFig||2)} items per the same figure.\n` +
       figPlan.captions.map((c,i)=>`Figure ${i+1}: ${c}`).join('\n') + '\n'
     : '';
+
+
+const figureBlock = (() => {
+    if (figPlan && figPlan.captions?.length) {
+      // Figures are available → the model must place tokens SAFELY.
+      return `
+FIGURES are available. RULES:
+- Use at most ONE [[FIG:n]] token per item (in the STEM; as a CHOICE only if truly necessary).
+- n ranges 1..${figPlan.captions.length}. Do not invent other numbers.
+- Prefer to use each figure at least once before reusing any.
+- Do not exceed ${(figPlan.perFig||2)} total items for the same figure n.
+- Never put two or more [[FIG:n]] in the same item.
+- Keep numbering 1..${count} exactly; each item must have a non-empty stem.
+Figure descriptions:
+${figPlan.captions.map((c,i)=>`Figure ${i+1}: ${c}`).join('\n')}
+`;
+    }
+    // No figures selected → explicitly forbid tokens so the model doesn’t add any.
+    return `
+NO FIGURES: Do NOT include any [[FIG:n]] tokens in any item.
+`;
+  })();
+
+
+const figureBlock = (() => {
+    if (figPlan && figPlan.captions?.length) {
+      const N = figPlan.captions.length;
+      const PF = Math.max(1, figPlan.perFig || 2);
+      return `
+FIGURE POLICY (READ CAREFULLY):
+- Use figures in at least ${Math.min('{count}', N)} items and at most ${N*PF} items total.
+- Distribute usage in round-robin order: 1,2,...,${N}, then repeat, without exceeding ${PF} uses per figure.
+- Exactly ONE [[FIG:n]] per item. Do not place two tokens in the same item.
+- Valid n is 1..${N}. Do not invent other numbers.
+- Placement rules by format:
+  • Multiple Choice → Put [[FIG:n]] on its own line **immediately before** the 'A.' line (end of the stem, not in choices).
+  • True or False → Put [[FIG:n]] at the very end of the statement (after the final punctuation).
+  • For all formats → Never put [[FIG:n]] inside or after the answer choices.
+- Keep item numbering 1..{count} and ensure every stem is non-empty.
+
+Figure descriptions:
+${figPlan.captions.map((c,i)=>`Figure ${i+1}: ${c}`).join('\n')}
+`.replace('{count}', String(count));
+    }
+    return `
+NO FIGURES: Do NOT include any [[FIG:n]] tokens in any item.
+`;
+  })();
+  
+  */
+  
+  const figureBlock = (() => {
+  if (figPlan && figPlan.captions?.length) {
+    const N = figPlan.captions.length;
+    const entries = Array.isArray(planForFormat) ? planForFormat : [];
+    if (!entries.length) {
+      // No assignments for this format → strictly forbid figures here
+      return `
+NO FIGURES in this ${format} section: Do NOT include any [[FIG:n]] tokens in any item.
+`.trim();
+    }
+    // List the exact items that MUST carry figures in THIS format section only.
+    const lines = entries.map(e => `- Item #${e.idx}: use [[FIG:${e.n}]] — ${e.desc}`).join('\n');
+    return `
+FIGURE ASSIGNMENT (THIS ${format} SECTION ONLY — FOLLOW EXACTLY):
+- Include figures in exactly ${entries.length} item(s) and in NO other items of this ${format} section.
+- Use the following mapping of item numbers to figure tokens and descriptions:
+${lines}
+- Do not invent figure numbers. Use only [[FIG:1]]..[[FIG:${N}]] as specified above.
+- Placement rules:
+  • Multiple Choice → Put [[FIG:n]] on its own line immediately before the 'A.' line (end of the stem).
+  • True or False → Put [[FIG:n]] at the very end of the statement (after punctuation).
+  • Never put [[FIG:n]] inside or after the choices.
+`.trim();
+  }
+  return `
+NO FIGURES: Do NOT include any [[FIG:n]] tokens in any item.
+`.trim();
+})();
+  
 
   const prompt = `
 Create a UNIQUE Set ${setIndex} of exactly ${count} ${format} items for:
@@ -1161,7 +1303,7 @@ Style: ${diffHint}
 Learning Material (+ figure descriptors embedded at the end):
 """${meta.content}"""`.trim();
 
-  return { format, count, prompt };
+  return { format, count, prompt, planForFormat };
 }
 
 /* ================== parse + render (FIG token aware) ================== */
@@ -1196,9 +1338,17 @@ function extractQuestions(block){
 function shuffleInPlace(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j]]; } }
 
 
-function stripLeadingNumber(s){
+   // function stripLeadingNumber(s){
   // optional FIG token(s), optional leading underscore, then 1. / 1)
-  return String(s||'').replace(/^\s*(?:\[\[FIG:\d+\]\]\s*)*_?\s*\d+[\.)]\s*/,'');
+ // return String(s||'').replace(/^\s*(?:\[\[FIG:\d+\]\]\s*)*_?\s*\d+[\.)]\s*/,'');
+// } 0970
+
+
+function stripLeadingNumber(s){
+  const str = String(s || '');
+  const m = str.match(/^\s*((?:\[\[FIG:\d+\]\]\s*)*)_?\s*\d+[\.)]\s*/);
+  if (!m) return str;
+  return (m[1] || '') + str.slice(m[0].length); // keep FIG tokens, drop the number
 }
 
 function renderMCQItem(txt, idx){
@@ -1452,6 +1602,7 @@ function ensureOnePerFigure(blocks, figPlan) {
   return blocks;
 }
 
+// 0970 we will not use this anymore 
 function autoInjectFigTokens(items, format, figPlan) {
   if (!figPlan || !figPlan.captions || !figPlan.captions.length || !FIG_ALLOWED.has(format)) return items;
 
@@ -1498,6 +1649,143 @@ function autoInjectFigTokens(items, format, figPlan) {
   }
   return out;
 }
+
+
+function enforceFigRulesNoInject(items, format, figPlan){
+  const out = items.slice();
+  // If no figures or format not allowed, strip all tokens.
+  if (!figPlan || !figPlan.captions?.length || !FIG_ALLOWED.has(format)) {
+    return out.map(s => stripFigTokens(s));
+  }
+
+  const maxN = figPlan.captions.length;
+  const perFig = Math.max(1, figPlan.perFig || 2);
+  const used = new Map(); // n -> count
+
+  for (let i=0;i<out.length;i++){
+    let s = String(out[i]);
+
+    // Remove tokens with n out of range
+    s = s.replace(/\[\[FIG:(\d+)\]\]/g, (m,n) => {
+      const num = Number(n);
+      return (num >= 1 && num <= maxN) ? m : '';
+    });
+
+    // Keep only the FIRST token in the item
+    const all = [...s.matchAll(/\[\[FIG:(\d+)\]\]/g)];
+    if (all.length > 1){
+      const first = all[0][0];
+      s = s.replace(/\s*\[\[FIG:\d+\]\]\s*/g, (m) => (m === first ? m : ''));
+    }
+
+    // Enforce per-figure cap (remove token if the figure exceeded limit)
+    const m = s.match(/\[\[FIG:(\d+)\]\]/);
+    if (m){
+      const n = Number(m[1]);
+      const c = (used.get(n)||0) + 1;
+      if (c > perFig){
+        // remove token (DON’T reassign; model is source of truth)
+        s = s.replace(/\s*\[\[FIG:\d+\]\]\s*/, '');
+      } else {
+        used.set(n, c);
+      }
+    }
+
+    out[i] = s;
+  }
+  return out;
+}
+
+function normalizeFigTokenPlacement(s, format){
+  let str = String(s);
+
+  // Nothing to do if there is no token
+  const m = str.match(/\[\[FIG:(\d+)\]\]/);
+  if (!m) return str;
+
+  // Remove all whitespace-surrounded duplicates except the first (defensive)
+  str = str.replace(/\s*\[\[FIG:(\d+)\]\]\s*/g, (match, n, off, whole) => {
+    // keep first occurrence only; others replaced earlier by enforceFigRulesNoInject
+    return match.trim();
+  });
+
+  if (format === 'Multiple Choice'){
+    // Move [[FIG:n]] to its own line immediately before A.
+    // 1) Split stem/choices
+    const aLabel = '(?:\\(?A\\)?[.)])';
+    const rxA = new RegExp('(?:^|\\n)\\s*' + aLabel + '\\s+');
+    const mA = str.match(rxA);
+    if (!mA) return str; // not a standard MCQ parse; leave as-is
+    const idxA = mA.index ?? -1;
+    const before = str.slice(0, idxA).replace(/\s*\[\[FIG:\d+\]\]\s*/g,'').trimEnd();
+    const after  = str.slice(idxA);
+    const tok = m[0];
+    return `${before}\n${tok}\n${after}`.replace(/\n{3,}/g,'\n\n');
+  }
+
+  if (format === 'True or False'){
+    // Ensure [[FIG:n]] is at the very end
+    // Strip token then append at end (after punctuation if any)
+    const tok = m[0];
+    let base = str.replace(/\s*\[\[FIG:\d+\]\]\s*/g,'').trim();
+    // If base already ends with .,?!;: leave it; otherwise add a space
+    return /[.?!;:]$/.test(base) ? `${base} ${tok}` : `${base}. ${tok}`;
+  }
+
+  // Other formats: place at end of the first line (stem end)
+  const nl = str.indexOf('\n');
+  if (nl === -1){
+    const tok = m[0];
+    const base = str.replace(/\s*\[\[FIG:\d+\]\]\s*/g,'').trim();
+    return `${base} ${tok}`;
+  } else {
+    const tok = m[0];
+    const head = str.slice(0, nl).replace(/\s*\[\[FIG:\d+\]\]\s*/g,'').trimEnd();
+    const tail = str.slice(nl);
+    return `${head} ${tok}${tail}`;
+  }
+}
+
+
+function rebalanceFigNumbers(items, figPlan){
+  if (!figPlan || !figPlan.captions?.length) return items;
+  const N = figPlan.captions.length;
+  const PF = Math.max(1, figPlan.perFig || 2);
+  const cap = Array.from({length:N}, () => 0);
+
+  const out = items.slice();
+  let next = 1;
+
+  for (let i=0;i<out.length;i++){
+    let s = String(out[i]);
+    const m = s.match(/\[\[FIG:(\d+)\]\]/);
+    if (!m) { out[i] = s; continue; }
+
+    // find a valid figure id (round-robin) that hasn't exceeded PF
+    let chosen = null;
+    for (let step=0; step<N; step++){
+      const n = ((next - 1 + step) % N) + 1;
+      if (cap[n-1] < PF) { chosen = n; break; }
+    }
+    if (chosen == null) {
+      // all figures at cap -> drop the token (do NOT add more)
+      out[i] = s.replace(/\s*\[\[FIG:\d+\]\]\s*/g,'');
+      continue;
+    }
+
+    // rewrite the token number if needed
+    const want = `[[FIG:${chosen}]]`;
+    s = s.replace(/\[\[FIG:\d+\]\]/, want);
+
+    cap[chosen-1] += 1;
+    next = chosen + 1; if (next > N) next = 1;
+
+    out[i] = s;
+  }
+  return out;
+}
+
+
 /* ============== Validator helpers ========== */
 
 // Accept A., A), (A) etc.
@@ -1521,6 +1809,11 @@ function nonEmptyStem(s){
   // after removing the leading number like "1." or "1)"
   const stem = String(s||'').replace(/^\s*_?\s*\d+\s*[\.)]\s*/,'').trim();
   return stem.length >= 5; // tweak if you want
+}
+
+function hasNonEmptyStemAfterTokens(s){
+  const stem = stripFigTokens(stripLeadingNumber(String(s||''))).trim();
+  return stem.length >= 5; // tweak threshold if needed
 }
 
 /* ============ Matching type helpers to convert it to 1 set of matching type only ========= */
@@ -1566,11 +1859,13 @@ function combineMatchingBlocks(blocks, desiredPairs){
 
 
 async function generateBlocksForSet({meta, selectedFormats, plan, difficulty, model, setIndex, banList, figPlan}){
-  const totalsByFormat = buildFormatTotals(plan, selectedFormats);
-  const formatTasks = Object.entries(totalsByFormat)
+    const totalsByFormat = buildFormatTotals(plan, selectedFormats);
+  // Build a deterministic figure plan: exactly 1 use per selected image (1..N), earliest slots first.
+    const figureAssignments = makeFigureAssignment(totalsByFormat, selectedFormats, figPlan);
+    const formatTasks = Object.entries(totalsByFormat)
     .filter(([,cnt]) => cnt > 0)
-    .map(([fmt, cnt]) => buildFormatTask(fmt, cnt, meta, difficulty, plan, setIndex, banList, figPlan));
-
+    .map(([fmt, cnt]) => buildFormatTask(fmt, cnt, meta, difficulty, plan, setIndex, banList, figPlan, figureAssignments[fmt] || []));
+// .map(([fmt, cnt]) => buildFormatTask(fmt, cnt, meta, difficulty, plan, setIndex, banList, figPlan));
   const blocks = [];
   for (const t of formatTasks){
     let data = await callModelStrict(t.prompt, model);
@@ -1626,17 +1921,36 @@ Return ONLY a JSON array of ${missing} objects, each like:
     } else {
         
         let items = extractQuestions(raw).items;
+        /*
         if (t.format === 'Multiple Choice') {
           items = items.filter(mcqHasFourChoices);
         } else if (t.format === 'True or False') {
+            /*
             items = items.map(x => stripLeadingNumber(x))
                          .map(normalizeTFStem)
                          .filter(s => s.trim().length > 0);
+                         
+            items = items
+              .filter(x => /\[\[FIG:\d+\]\]/.test(x) || stripLeadingNumber(x).trim().length > 0)
+              .map(x => normalizeTFStem(stripLeadingNumber(x)));
+                         
         } else {
           // Identification / Essay: just require a non-empty stem
           items = items.filter(nonEmptyStem);
         }
-              
+        
+              */
+        
+        if (t.format === 'Multiple Choice') {
+          items = items.filter(mcqHasFourChoices);
+        } else if (t.format === 'True or False') {
+          items = items
+            .map(x => normalizeTFStem(stripLeadingNumber(x)))
+            .filter(s => s.trim().length > 0);
+        } else {
+          // Identification / Essay (or others): must have a real stem after stripping number & fig tokens
+          items = items.filter(hasNonEmptyStemAfterTokens);
+        }
       
       if (t.format === 'True or False'){
         items = items.map(x => x.replace(/^\s*(_\s*)?\d+[\.)]\s*/,'')).map(normalizeTFStem).filter(s => s.trim().length > 0); 
@@ -1678,7 +1992,25 @@ Plain text only.`.trim();
         }
       }
     }
-    keep = autoInjectFigTokens(keep, t.format, figPlan);
+    // keep = autoInjectFigTokens(keep, t.format, figPlan); 0970
+    /*
+    keep = enforceFigRulesNoInject(keep, t.format, figPlan);
+    // Normalize placement (stem end) and rebalance numbers
+    keep = keep.map(s => normalizeFigTokenPlacement(s, t.format));
+    keep = rebalanceFigNumbers(keep, figPlan);
+    */
+     // Enforce the exact plan for THIS format (inject/replace where necessary, strip elsewhere)
+     keep = applyFigurePlanToGeneratedItems(keep, t.format, t.planForFormat || []);
+     // Normalize placement rules per format
+    keep = keep.map(s => normalizeFigTokenPlacement(s, t.format));
+    
+    // console log purpose onnly, you can remove it (0970)
+    const allTokens = (keep.join('\n').match(/\[\[FIG:(\d+)\]\]/g) || []);
+    const spread = {};
+    allTokens.forEach(t => { const n = Number(t.match(/\d+/)[0]); spread[n] = (spread[n]||0) + 1; });
+    console.log('[AI][FINAL]', { format: t.format, kept: keep.length, perFig: spread });
+    
+    
     blocks.push({ topic: meta.topic || meta.subject || 'General', format: t.format, items: keep.slice(0, t.count) });
   }
   
@@ -1693,10 +2025,10 @@ Plain text only.`.trim();
     items = items.map(normalizeMatchingBlock).filter(isValidMatchingBlock);
     if (items.length) blocks.push({ topic: meta.topic || meta.subject || 'General', format:'Matching Type', items: [items[0]] });
   }
-  
+    console.log('[FIG] selected:', window.__selectedFigures.map((f,i)=>({i:i+1, name:f.name, cap:f.caption}))); // 0970
     if (figPlan) {
       // enforce exactly 1 usage per selected image and match the question to image
-      attachFiguresByCaption(blocks, figPlan);
+     // attachFiguresByCaption(blocks, figPlan);
     }
     
   return blocks;
@@ -1833,7 +2165,7 @@ async function generateExamFlow(){
       setLoader(`Generating Set ${s}…`,'Fresh questions with inline figures.');
       setProgress(40 + Math.round((s-1)*(50/Math.max(1,numSets))), `Generating Set ${s}`);
       let blocks = await generateBlocksForSet({meta, selectedFormats, plan, difficulty, model, setIndex:s, banList, figPlan});
-      blocks = ensureAtLeastOnePerSelectedFigure(blocks);
+      // blocks = ensureAtLeastOnePerSelectedFigure(blocks); // 0970
       const paperHtml = renderExamFromBlocks(blocks, meta, selectedFormats, doShuffle, s);
 
       // Update ban list (first line of each item)
