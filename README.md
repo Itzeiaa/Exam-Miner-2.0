@@ -72,6 +72,8 @@ It can also:
 git clone https://github.com/Itzeiaa/exam-miner-2.0.git
 cd exam-miner-2.0
 
+---
+
 
 ## ALGORITHM (pseudocode)
 
