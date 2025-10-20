@@ -65,16 +65,6 @@ It can also:
 
 ---
 
-## ⚙️ Installation Guide
-
-### 1️⃣ Clone the repository
-```bash
-git clone https://github.com/Itzeiaa/exam-miner-2.0.git
-cd exam-miner-2.0
-
----
-
-
 ## ALGORITHM (pseudocode)
 
 1) Validate session & UI boot
@@ -160,3 +150,13 @@ cd exam-miner-2.0
 • Deterministic Figure Assignment (“makeFigureAssignment”)
   - Purpose: Ensure every selected image is used exactly once and tied to a specific item index in FIG_ALLOWED formats—so the AI cannot under-use images.
   - How: Walk formats in user order; assign figures 1..N to the earl
+
+
+---
+
+## ⚙️ Installation Guide
+
+### 1️⃣ Clone the repository
+```bash
+git clone https://github.com/Itzeiaa/exam-miner-2.0.git
+cd exam-miner-2.0
